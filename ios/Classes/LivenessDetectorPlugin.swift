@@ -4,9 +4,12 @@ import UIKit
 public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
   private var detector: LivenessDetector?
 
+  private static var registrar: FlutterPluginRegistrar?
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "com.leng.dev/liveness_detector", binaryMessenger: registrar.messenger())
     let instance = LivenessDetectorPlugin()
+    self.registrar = registrar
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
 
@@ -19,9 +22,9 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
           detector = LivenessDetector()
       }
       
-      // We'll need to find the assets path
-      let key = "assets/live"
-      let assetPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
+      // Get the correct path for the plugin asset
+      let assetKey = LivenessDetectorPlugin.registrar?.lookupKey(forAsset: "android/src/main/assets/live/") ?? "android/src/main/assets/live/"
+      let assetPath = Bundle.main.path(forResource: assetKey, ofType: nil) ?? ""
       
       let status = detector?.loadModel(assetPath, configPath: assetPath + "/config.json") ?? -1
       result(status == 0)

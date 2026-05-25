@@ -149,7 +149,7 @@ class LivenessDetector {
      */
     private fun parseConfig(assetManager: AssetManager): List<ModelConfig> {
         return try {
-            val inputStream = assetManager.open("flutter_assets/assets/live/config.json")
+            val inputStream = assetManager.open("live/config.json")
             val br = BufferedReader(InputStreamReader(inputStream))
             val jsonContent = br.use { it.readText() }
 

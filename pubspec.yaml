@@ -26,12 +26,12 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
   assets:
-    - assets/live/
-    - assets/live/config.json
-    - assets/live/model_1.bin
-    - assets/live/model_1.param
-    - assets/live/model_2.bin
-    - assets/live/model_2.param
+    - android/src/main/assets/live/
+    - android/src/main/assets/live/config.json
+    - android/src/main/assets/live/model_1.bin
+    - android/src/main/assets/live/model_1.param
+    - android/src/main/assets/live/model_2.bin
+    - android/src/main/assets/live/model_2.param
 
   # This section identifies this Flutter project as a plugin project.
   # The 'pluginClass' specifies the class (in Java, Kotlin, Swift, Objective-C, etc.)
