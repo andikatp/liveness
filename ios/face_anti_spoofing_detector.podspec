@@ -10,6 +10,7 @@ Flutter plugin that provides passive liveness detection for facial recognition s
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
+  s.static_framework = true
   s.dependency 'Flutter'
   s.dependency 'NCNN_IOS'
   s.platform = :ios, '12.0'
