@@ -22,12 +22,19 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
           detector = LivenessDetector()
       }
       
-      // Get the correct path for the plugin asset by resolving a specific file
-      let assetKey = LivenessDetectorPlugin.registrar?.lookupKey(forAsset: "android/src/main/assets/live/config.json") ?? ""
-      let configPath = Bundle.main.path(forResource: assetKey, ofType: nil) ?? ""
+      var bundle = Bundle(for: LivenessDetectorPlugin.self)
+#if SWIFT_PACKAGE
+      bundle = Bundle.module
+#else
+      if let bundleURL = bundle.url(forResource: "face_anti_spoofing_detector_assets", withExtension: "bundle"),
+         let resourceBundle = Bundle(url: bundleURL) {
+          bundle = resourceBundle
+      }
+#endif
       
-      // The models are in the same folder as config.json
+      let configPath = bundle.path(forResource: "config", ofType: "json", inDirectory: "live") ?? ""
       let assetPath = configPath.isEmpty ? "" : (configPath as NSString).deletingLastPathComponent
+
       
       let status = detector?.loadModel(assetPath, configPath: configPath) ?? -1
       result(status == 0)

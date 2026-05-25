@@ -25,6 +25,9 @@ let package = Package(
             name: "face_anti_spoofing_detector",
             dependencies: ["ncnn", "openmp"],
             path: "Classes",
+            resources: [
+                .process("../Assets")
+            ],
             cxxSettings: [
                 .define("HAS_NCNN", to: "1")
             ]
