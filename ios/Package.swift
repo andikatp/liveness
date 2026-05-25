@@ -24,7 +24,10 @@ let package = Package(
         .target(
             name: "face_anti_spoofing_detector",
             dependencies: ["ncnn", "openmp"],
-            path: "Classes"
+            path: "Classes",
+            cxxSettings: [
+                .define("HAS_NCNN", to: "1")
+            ]
         )
     ]
 )

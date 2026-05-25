@@ -5,9 +5,15 @@
 #include <vector>
 
 // ncnn headers
-#if __has_include("ncnn/net.h")
-#include "ncnn/net.h"
-#define HAS_NCNN 1
+#if __has_include(<ncnn/net.h>)
+    #include <ncnn/net.h>
+    #define HAS_NCNN 1
+#elif __has_include(<ncnn/ncnn/net.h>)
+    #include <ncnn/ncnn/net.h>
+    #define HAS_NCNN 1
+#elif __has_include("ncnn/net.h")
+    #include "ncnn/net.h"
+    #define HAS_NCNN 1
 #endif
 
 struct ModelConfig {
