@@ -22,11 +22,14 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
           detector = LivenessDetector()
       }
       
-      // Get the correct path for the plugin asset
-      let assetKey = LivenessDetectorPlugin.registrar?.lookupKey(forAsset: "android/src/main/assets/live/") ?? "android/src/main/assets/live/"
-      let assetPath = Bundle.main.path(forResource: assetKey, ofType: nil) ?? ""
+      // Get the correct path for the plugin asset by resolving a specific file
+      let assetKey = LivenessDetectorPlugin.registrar?.lookupKey(forAsset: "android/src/main/assets/live/config.json") ?? ""
+      let configPath = Bundle.main.path(forResource: assetKey, ofType: nil) ?? ""
       
-      let status = detector?.loadModel(assetPath, configPath: assetPath + "/config.json") ?? -1
+      // The models are in the same folder as config.json
+      let assetPath = configPath.isEmpty ? "" : (configPath as NSString).deletingLastPathComponent
+      
+      let status = detector?.loadModel(assetPath, configPath: configPath) ?? -1
       result(status == 0)
     case "detect_liveness":
       guard let args = call.arguments as? [String: Any],
