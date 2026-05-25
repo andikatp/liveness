@@ -133,8 +133,8 @@ public:
     h = std::min((float)height - y, h);
 
     ncnn::Mat face;
-    ncnn::copy_make_border_clip(img, face, (int)y, (int)(height - y - h),
-                                (int)x, (int)(width - x - w));
+    ncnn::copy_cut_border(img, face, (int)y, (int)(height - y - h),
+                          (int)x, (int)(width - x - w));
 
     // 3. Resize to model input (80x80)
     ncnn::Mat in;
