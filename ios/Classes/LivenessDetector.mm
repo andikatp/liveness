@@ -4,26 +4,8 @@
 #include <string>
 #include <vector>
 
-// ncnn headers
-#if __has_include(<ncnn/net.h>)
-    #include <ncnn/net.h>
-    #ifndef HAS_NCNN
-        #define HAS_NCNN 1
-    #endif
-#elif __has_include(<ncnn/ncnn/net.h>)
-    #include <ncnn/ncnn/net.h>
-    #ifndef HAS_NCNN
-        #define HAS_NCNN 1
-    #endif
-#elif __has_include("ncnn/net.h")
-    #include "ncnn/net.h"
-    #ifndef HAS_NCNN
-        #define HAS_NCNN 1
-    #endif
-#else
-    // If headers are not found, we must make sure HAS_NCNN is NOT defined
-    // even if it was passed from build settings, to avoid "undeclared identifier" errors.
-    #undef HAS_NCNN
+#if HAS_NCNN
+#include <ncnn/net.h>
 #endif
 
 struct ModelConfig {
@@ -38,7 +20,7 @@ struct ModelConfig {
 
 class LivenessDetectorImpl {
 public:
-#ifdef HAS_NCNN
+#if HAS_NCNN
   std::vector<ncnn::Net *> nets;
 #else
   std::vector<void *> nets;
@@ -47,7 +29,7 @@ public:
   bool is_loaded = false;
 
   ~LivenessDetectorImpl() {
-#ifdef HAS_NCNN
+#if HAS_NCNN
     for (auto net : nets) {
       delete net;
     }
@@ -71,14 +53,13 @@ public:
   if (impl->is_loaded)
     return 0;
 
-  // Scale 2.7 and 4.0 are standard for MiniFASNet models
   ModelConfig cfg1 = {2.7f, 0.0f, 0.0f, 80, 80, "model_1", false};
   ModelConfig cfg2 = {4.0f, 0.0f, 0.0f, 80, 80, "model_2", false};
 
   impl->configs.push_back(cfg1);
   impl->configs.push_back(cfg2);
 
-#ifdef HAS_NCNN
+#if HAS_NCNN
   for (const auto &cfg : impl->configs) {
     ncnn::Net *net = new ncnn::Net();
     net->opt.use_vulkan_compute = false;
@@ -112,8 +93,7 @@ public:
   if (!impl->is_loaded)
     return 0.0f;
 
-#ifdef HAS_NCNN
-  // 1. Create Mat from pixels (iOS usually provides BGRA)
+#if HAS_NCNN
   ncnn::Mat img =
       ncnn::Mat::from_pixels((const unsigned char *)[yuvData bytes],
                              ncnn::Mat::PIXEL_BGRA2RGB, width, height);
@@ -124,7 +104,6 @@ public:
     ncnn::Net *net = impl->nets[i];
     const auto &cfg = impl->configs[i];
 
-    // 2. Crop Face area with scale
     int box_width = right - left;
     int box_height = bottom - top;
 
@@ -136,28 +115,24 @@ public:
     float x = left - (w - box_width) / 2.0f;
     float y = top - (h - box_height) / 2.0f;
 
-    // Clamp bounds
     x = std::max(0.0f, x);
     y = std::max(0.0f, y);
     w = std::min((float)width - x, w);
     h = std::min((float)height - y, h);
 
     ncnn::Mat face;
-    ncnn::copy_cut_border(img, face, (int)y, (int)(height - y - h),
-                          (int)x, (int)(width - x - w));
+    ncnn::copy_cut_border(img, face, (int)y, (int)(height - y - h), (int)x,
+                          (int)(width - x - w));
 
-    // 3. Resize to model input (80x80)
     ncnn::Mat in;
     ncnn::resize_bilinear(face, in, cfg.width, cfg.height);
 
-    // 4. Run Inference
     ncnn::Extractor ex = net->create_extractor();
     ex.input("data", in);
 
     ncnn::Mat out;
     ex.extract("softmax", out);
 
-    // out[1] is the "Real" score for these models
     if (out.w >= 2) {
       total_score += out[1];
     } else {
