@@ -14,18 +14,19 @@ Flutter plugin that provides passive liveness detection for facial recognition s
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 
-  s.vendored_frameworks = [
-    'ncnn.xcframework',
-    'openmp.xcframework'
-  ]
+  s.vendored_frameworks = 'ncnn.xcframework', 'openmp.xcframework'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64'
-  }
 
-  s.user_target_xcconfig = {
-    'OTHER_LDFLAGS' => '$(inherited) -framework ncnn -framework openmp'
+    # 🔥 KEY: disable arm64 simulator so it never tries to use ncnn
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64',
+
+    # 🔥 KEY: ONLY link framework on real device
+    'OTHER_LDFLAGS[sdk=iphoneos*]' => '$(inherited) -framework ncnn -framework openmp',
+
+    # simulator → no linking at all
+    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => '$(inherited)'
   }
 
   s.swift_version = '5.0'
