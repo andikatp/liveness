@@ -14,34 +14,21 @@ Flutter plugin that provides passive liveness detection for facial recognition s
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 
-  current_dir = File.dirname(__FILE__)
+  # Use vendored_frameworks — CocoaPods handles linking natively
+  # This works for device. Simulator is handled by EXCLUDED_ARCHS below.
+  s.vendored_frameworks = 'ncnn.xcframework', 'openmp.xcframework'
 
-  # Only vendor frameworks for real device builds
-  # Simulator has no ncnn slice — LivenessDetector.mm stubs it via __has_include
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
+    # Exclude ALL sim archs — xcframework has no simulator slice.
+    # The LivenessDetector.mm #else branch returns 0.0f on simulator
+    # because headers won't be found (no sim slice = no headers copied).
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64 x86_64 i386',
+  }
 
-    # Simulator: don't link ncnn, don't search for it
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]'           => 'arm64 i386',
-    'OTHER_LDFLAGS[sdk=iphonesimulator*]'            => '$(inherited)',
-    'FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]'   => '$(inherited)',
-    'HEADER_SEARCH_PATHS[sdk=iphonesimulator*]'      => '$(inherited)',
-
-    # Device: force-link ncnn + openmp
-    'OTHER_LDFLAGS[sdk=iphoneos*]' =>
-      "$(inherited)" \
-      " -force_load \"#{current_dir}/ncnn.xcframework/ios-arm64/ncnn.framework/ncnn\"" \
-      " \"#{current_dir}/openmp.xcframework/ios-arm64/openmp.framework/openmp\"",
-
-    'FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]' =>
-      "$(inherited)" \
-      " \"#{current_dir}/ncnn.xcframework/ios-arm64\"" \
-      " \"#{current_dir}/openmp.xcframework/ios-arm64\"",
-
-    'HEADER_SEARCH_PATHS[sdk=iphoneos*]' =>
-      "$(inherited)" \
-      " \"#{current_dir}/ncnn.xcframework/ios-arm64/ncnn.framework/Headers\"" \
-      " \"#{current_dir}/openmp.xcframework/ios-arm64/openmp.framework/Headers\"",
+  # Propagate the arch exclusion up to the Runner target too
+  s.user_target_xcconfig = {
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64 x86_64 i386',
   }
 
   s.swift_version = '5.0'
