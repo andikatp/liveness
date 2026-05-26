@@ -7,13 +7,23 @@
 // ncnn headers
 #if __has_include(<ncnn/net.h>)
     #include <ncnn/net.h>
-    #define HAS_NCNN 1
+    #ifndef HAS_NCNN
+        #define HAS_NCNN 1
+    #endif
 #elif __has_include(<ncnn/ncnn/net.h>)
     #include <ncnn/ncnn/net.h>
-    #define HAS_NCNN 1
+    #ifndef HAS_NCNN
+        #define HAS_NCNN 1
+    #endif
 #elif __has_include("ncnn/net.h")
     #include "ncnn/net.h"
-    #define HAS_NCNN 1
+    #ifndef HAS_NCNN
+        #define HAS_NCNN 1
+    #endif
+#else
+    // If headers are not found, we must make sure HAS_NCNN is NOT defined
+    // even if it was passed from build settings, to avoid "undeclared identifier" errors.
+    #undef HAS_NCNN
 #endif
 
 struct ModelConfig {

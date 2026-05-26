@@ -29,7 +29,7 @@ let package = Package(
                 .process("../Assets")
             ],
             cxxSettings: [
-                .define("HAS_NCNN", to: "1")
+                // HAS_NCNN is now handled in LivenessDetector.mm via __has_include
             ]
         )
     ]
