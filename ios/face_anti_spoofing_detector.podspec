@@ -14,25 +14,22 @@ Flutter plugin that provides passive liveness detection for facial recognition s
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 
-  s.vendored_frameworks = 'ncnn.xcframework', 'openmp.xcframework'
+  # ❌ REMOVE vendored_frameworks completely
+  # s.vendored_frameworks = ...
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
 
-    # 🔥 KEY: disable arm64 simulator so it never tries to use ncnn
+    # prevent simulator from touching ncnn
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64',
 
-    # 🔥 KEY: ONLY link framework on real device
-    'OTHER_LDFLAGS[sdk=iphoneos*]' => '$(inherited) -framework ncnn -framework openmp',
+    # header search (needed for compile)
+    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/ncnn.xcframework/ios-arm64/ncnn.framework/Headers"',
 
-    # simulator → no linking at all
-    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => '$(inherited)'
+    # 🔥 link ONLY on real device
+    'LIBRARY_SEARCH_PATHS[sdk=iphoneos*]' => '$(inherited) "${PODS_TARGET_SRCROOT}/ncnn.xcframework/ios-arm64"',
+    'OTHER_LDFLAGS[sdk=iphoneos*]' => '$(inherited) -framework ncnn'
   }
 
   s.swift_version = '5.0'
-
-  s.resource_bundles = {
-    'face_anti_spoofing_detector_privacy' => ['Resources/PrivacyInfo.xcprivacy'],
-    'face_anti_spoofing_detector_assets'  => ['Assets/**/*']
-  }
 end
