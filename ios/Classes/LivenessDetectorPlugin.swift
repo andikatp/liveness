@@ -22,20 +22,22 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
           detector = LivenessDetector()
       }
       
-      var bundle = Bundle(for: LivenessDetectorPlugin.self)
-#if SWIFT_PACKAGE
-      bundle = Bundle.module
-#else
-      if let bundleURL = bundle.url(forResource: "face_anti_spoofing_detector_assets", withExtension: "bundle"),
-         let resourceBundle = Bundle(url: bundleURL) {
-          bundle = resourceBundle
+      guard let registrar = LivenessDetectorPlugin.registrar else {
+          result(false)
+          return
       }
-#endif
-      
-      let configPath = bundle.path(forResource: "config", ofType: "json", inDirectory: "live") ?? ""
-      let assetPath = configPath.isEmpty ? "" : (configPath as NSString).deletingLastPathComponent
 
-      
+      // Look up asset key from flutter package
+      var key = registrar.lookupKey(forAsset: "android/src/main/assets/live/config.json", fromPackage: "face_anti_spoofing_detector")
+      var configPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
+
+      // Fallback if not found
+      if configPath.isEmpty {
+          key = registrar.lookupKey(forAsset: "android/src/main/assets/live/config.json")
+          configPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
+      }
+
+      let assetPath = configPath.isEmpty ? "" : (configPath as NSString).deletingLastPathComponent
       let status = detector?.loadModel(assetPath, configPath: configPath) ?? -1
       result(status == 0)
     case "detect_liveness":
