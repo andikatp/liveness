@@ -3,28 +3,45 @@ Pod::Spec.new do |s|
   s.version          = '0.0.4'
   s.summary          = 'A Flutter plugin for passive face liveness detection.'
   s.description      = <<-DESC
-Flutter plugin that provides passive liveness detection for facial recognition systems — ensuring that the detected face belongs to a live person rather than a photo, video.
-                       DESC
+Flutter plugin that provides passive liveness detection for facial recognition systems.
+  DESC
   s.homepage         = 'https://github.com/horlengg/face_anti_spoofing_detector'
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
   s.static_framework = true
-
-  # This is what actually copies and links the frameworks
-  s.vendored_frameworks = 'ncnn.xcframework', 'openmp.xcframework'
-
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
 
+  current_dir = File.dirname(__FILE__)
+
+  # Only vendor frameworks for real device builds
+  # Simulator has no ncnn slice — LivenessDetector.mm stubs it via __has_include
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    # Exclude arm64 simulator (no simulator slice in xcframework)
-    # x86_64 simulator still works, arm64 sim is excluded
-    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64 i386',
-    # Do NOT define HAS_NCNN here — LivenessDetector.mm handles it
-    # via __has_include so simulator gets the stub automatically
+
+    # Simulator: don't link ncnn, don't search for it
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]'           => 'arm64 i386',
+    'OTHER_LDFLAGS[sdk=iphonesimulator*]'            => '$(inherited)',
+    'FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]'   => '$(inherited)',
+    'HEADER_SEARCH_PATHS[sdk=iphonesimulator*]'      => '$(inherited)',
+
+    # Device: force-link ncnn + openmp
+    'OTHER_LDFLAGS[sdk=iphoneos*]' =>
+      "$(inherited)" \
+      " -force_load \"#{current_dir}/ncnn.xcframework/ios-arm64/ncnn.framework/ncnn\"" \
+      " \"#{current_dir}/openmp.xcframework/ios-arm64/openmp.framework/openmp\"",
+
+    'FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]' =>
+      "$(inherited)" \
+      " \"#{current_dir}/ncnn.xcframework/ios-arm64\"" \
+      " \"#{current_dir}/openmp.xcframework/ios-arm64\"",
+
+    'HEADER_SEARCH_PATHS[sdk=iphoneos*]' =>
+      "$(inherited)" \
+      " \"#{current_dir}/ncnn.xcframework/ios-arm64/ncnn.framework/Headers\"" \
+      " \"#{current_dir}/openmp.xcframework/ios-arm64/openmp.framework/Headers\"",
   }
 
   s.swift_version = '5.0'
