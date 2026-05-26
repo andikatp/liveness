@@ -14,18 +14,16 @@ Flutter plugin that provides passive liveness detection for facial recognition s
   s.dependency 'Flutter'
   s.platform         = :ios, '12.0'
 
-  s.vendored_frameworks = [
-    'ncnn.xcframework'
-  ]
-
   s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES'
+    'DEFINES_MODULE' => 'YES',
+
+    # headers always available
+    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/ncnn.xcframework/ios-arm64/ncnn.framework/Headers"',
+
+    # 🔥 ONLY link for real device
+    'LIBRARY_SEARCH_PATHS[sdk=iphoneos*]' => '$(inherited) "${PODS_TARGET_SRCROOT}/ncnn.xcframework/ios-arm64"',
+    'OTHER_LDFLAGS[sdk=iphoneos*]' => '$(inherited) -framework ncnn -lc++'
   }
 
   s.swift_version = '5.0'
-
-  s.resource_bundles = {
-    'face_anti_spoofing_detector_privacy' => ['Resources/PrivacyInfo.xcprivacy'],
-    'face_anti_spoofing_detector_assets'  => ['Assets/**/*']
-  }
 end
