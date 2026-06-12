@@ -24,10 +24,6 @@ let package = Package(
         .target(
             name: "face_anti_spoofing_detector",
             dependencies: ["ncnn", "openmp"],
-            path: "Classes",
-            resources: [
-                .process("../Assets")
-            ],
             cxxSettings: [
                 // HAS_NCNN is now handled in LivenessDetector.mm via __has_include
             ]
