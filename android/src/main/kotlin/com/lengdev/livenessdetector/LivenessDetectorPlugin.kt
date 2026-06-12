@@ -134,12 +134,9 @@ class LivenessDetectorPlugin : FlutterPlugin, MethodCallHandler {
     // --- Destroy detector ---
     fun destroy(result: Result) {
         try {
+            // Idempotent: if not initialized, just return success
             if (livenessDetector == null) {
-                result.error(
-                    "NO_INITIALIZE_MODULE_ERROR",
-                    "Detector not yet initialized.",
-                    null
-                )
+                result.success(true)
                 return
             }
             livenessDetector?.destroy()
