@@ -28,12 +28,12 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
       }
 
       // Look up asset key from flutter package
-      var key = registrar.lookupKey(forAsset: "android/src/main/assets/live/config.json", fromPackage: "face_anti_spoofing_detector")
+      var key = registrar.lookupKey(forAsset: "assets/live/config.json", fromPackage: "face_anti_spoofing_detector")
       var configPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
 
       // Fallback if not found
       if configPath.isEmpty {
-          key = registrar.lookupKey(forAsset: "android/src/main/assets/live/config.json")
+          key = registrar.lookupKey(forAsset: "assets/live/config.json")
           configPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
       }
 
