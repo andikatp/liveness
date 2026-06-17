@@ -117,8 +117,7 @@ public:
     int stride = (int)[yuvData length] / height;
     strippedBuf = new unsigned char[expectedSize];
     for (int row = 0; row < height; row++) {
-      memcpy(strippedBuf + row * width * 4,
-             srcPixels + row * stride,
+      memcpy(strippedBuf + row * width * 4, srcPixels + row * stride,
              width * 4);
     }
     pixels = strippedBuf;
@@ -130,18 +129,48 @@ public:
     int outh = (orientation >= 5) ? width : height;
 
     unsigned char *rotated_bgra = new unsigned char[outw * outh * 4];
-    ncnn::kanna_rotate_c4(pixels, width, height,
-                          rotated_bgra, outw, outh, orientation);
+    ncnn::kanna_rotate_c4(pixels, width, height, rotated_bgra, outw, outh,
+                          orientation);
 
     img = ncnn::Mat::from_pixels(rotated_bgra, ncnn::Mat::PIXEL_BGRA2RGB, outw,
                                  outh);
     delete[] rotated_bgra;
 
+    // Rotate bounding box coordinates to match the new rotated image dimensions
+    int new_left = left, new_top = top, new_right = right, new_bottom = bottom;
+
+    if (orientation == 8) { // Rotate 270 CW (90 CCW)
+      new_left = top;
+      new_top = width - right;
+      new_right = bottom;
+      new_bottom = width - left;
+    } else if (orientation == 6) { // Rotate 90 CW
+      new_left = height - bottom;
+      new_top = left;
+      new_right = height - top;
+      new_bottom = right;
+    } else if (orientation == 3) { // Rotate 180
+      new_left = width - right;
+      new_top = height - bottom;
+      new_right = width - left;
+      new_bottom = height - top;
+    } else if (orientation == 7) { // Transverse (flip y + rotate 90 CW)
+      new_left = height - bottom;
+      new_top = width - right;
+      new_right = height - top;
+      new_bottom = width - left;
+    }
+
+    left = new_left;
+    top = new_top;
+    right = new_right;
+    bottom = new_bottom;
+
     width = outw;
     height = outh;
   } else {
-    img = ncnn::Mat::from_pixels(pixels,
-                                 ncnn::Mat::PIXEL_BGRA2RGB, width, height);
+    img = ncnn::Mat::from_pixels(pixels, ncnn::Mat::PIXEL_BGRA2RGB, width,
+                                 height);
   }
 
   if (strippedBuf) {
