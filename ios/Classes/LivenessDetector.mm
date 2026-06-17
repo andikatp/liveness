@@ -5,8 +5,13 @@
 #include <vector>
 #include <TargetConditionals.h>
 
+#if TARGET_OS_SIMULATOR
+#undef HAS_NCNN
+#define HAS_NCNN 0
+#else
 #ifndef HAS_NCNN
 #define HAS_NCNN 1
+#endif
 #endif
 
 #if HAS_NCNN
