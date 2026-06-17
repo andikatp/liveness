@@ -104,9 +104,23 @@ public:
     return 0.0f;
 
 #if HAS_NCNN
-  ncnn::Mat img =
-      ncnn::Mat::from_pixels((const unsigned char *)[yuvData bytes],
-                             ncnn::Mat::PIXEL_BGRA2RGB, width, height);
+  ncnn::Mat img;
+  if (orientation > 1 && orientation <= 8) {
+    int outw = (orientation >= 5) ? height : width;
+    int outh = (orientation >= 5) ? width : height;
+    
+    unsigned char* rotated_bgra = new unsigned char[outw * outh * 4];
+    ncnn::kanna_rotate_c4((const unsigned char *)[yuvData bytes], width, height, rotated_bgra, outw, outh, orientation);
+    
+    img = ncnn::Mat::from_pixels(rotated_bgra, ncnn::Mat::PIXEL_BGRA2RGB, outw, outh);
+    delete[] rotated_bgra;
+    
+    width = outw;
+    height = outh;
+  } else {
+    img = ncnn::Mat::from_pixels((const unsigned char *)[yuvData bytes],
+                                 ncnn::Mat::PIXEL_BGRA2RGB, width, height);
+  }
 
   float total_score = 0.0f;
 

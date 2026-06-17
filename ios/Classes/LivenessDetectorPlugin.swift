@@ -18,28 +18,33 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
     case "getPlatformVersion":
       result("iOS " + UIDevice.current.systemVersion)
     case "initialize":
-      if detector == nil {
-          detector = LivenessDetector()
-      }
-      
-      guard let registrar = LivenessDetectorPlugin.registrar else {
-          result(false)
-          return
-      }
+      DispatchQueue.global(qos: .userInitiated).async {
+          if self.detector == nil {
+              self.detector = LivenessDetector()
+          }
+          
+          guard let registrar = LivenessDetectorPlugin.registrar else {
+              DispatchQueue.main.async { result(false) }
+              return
+          }
 
-      // Look up asset key from flutter package
-      var key = registrar.lookupKey(forAsset: "assets/live/config.json", fromPackage: "face_anti_spoofing_detector")
-      var configPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
+          // Look up asset key from flutter package
+          var key = registrar.lookupKey(forAsset: "assets/live/config.json", fromPackage: "face_anti_spoofing_detector")
+          var configPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
 
-      // Fallback if not found
-      if configPath.isEmpty {
-          key = registrar.lookupKey(forAsset: "assets/live/config.json")
-          configPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
+          // Fallback if not found
+          if configPath.isEmpty {
+              key = registrar.lookupKey(forAsset: "assets/live/config.json")
+              configPath = Bundle.main.path(forResource: key, ofType: nil) ?? ""
+          }
+
+          let assetPath = configPath.isEmpty ? "" : (configPath as NSString).deletingLastPathComponent
+          let status = self.detector?.loadModel(assetPath, configPath: configPath) ?? -1
+          
+          DispatchQueue.main.async {
+              result(status == 0)
+          }
       }
-
-      let assetPath = configPath.isEmpty ? "" : (configPath as NSString).deletingLastPathComponent
-      let status = detector?.loadModel(assetPath, configPath: configPath) ?? -1
-      result(status == 0)
     case "detect_liveness":
       guard let args = call.arguments as? [String: Any],
             let yuvData = args["yuvBytes"] as? FlutterStandardTypedData,
@@ -51,15 +56,19 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
           return
       }
       
-      let score = detector?.detectLiveness(yuvData.data, 
-                                          width: width, 
-                                          height: height, 
-                                          orientation: orientation, 
-                                          left: faceBox["left"] ?? 0, 
-                                          top: faceBox["top"] ?? 0, 
-                                          right: faceBox["right"] ?? 0, 
-                                          bottom: faceBox["bottom"] ?? 0) ?? 0.0
-      result(Double(score))
+      DispatchQueue.global(qos: .userInitiated).async {
+          let score = self.detector?.detectLiveness(yuvData.data, 
+                                              width: width, 
+                                              height: height, 
+                                              orientation: orientation, 
+                                              left: faceBox["left"] ?? 0, 
+                                              top: faceBox["top"] ?? 0, 
+                                              right: faceBox["right"] ?? 0, 
+                                              bottom: faceBox["bottom"] ?? 0) ?? 0.0
+          DispatchQueue.main.async {
+              result(Double(score))
+          }
+      }
     case "destroy":
       detector?.destroy()
       detector = nil
