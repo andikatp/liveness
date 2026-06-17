@@ -1,9 +1,9 @@
 #import "LivenessDetector.h"
+#include <TargetConditionals.h>
 #include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
-#include <TargetConditionals.h>
 
 #if TARGET_OS_SIMULATOR
 #undef HAS_NCNN
@@ -108,13 +108,15 @@ public:
   if (orientation > 1 && orientation <= 8) {
     int outw = (orientation >= 5) ? height : width;
     int outh = (orientation >= 5) ? width : height;
-    
-    unsigned char* rotated_bgra = new unsigned char[outw * outh * 4];
-    ncnn::kanna_rotate_c4((const unsigned char *)[yuvData bytes], width, height, rotated_bgra, outw, outh, orientation);
-    
-    img = ncnn::Mat::from_pixels(rotated_bgra, ncnn::Mat::PIXEL_BGRA2RGB, outw, outh);
+
+    unsigned char *rotated_bgra = new unsigned char[outw * outh * 4];
+    ncnn::kanna_rotate_c4((const unsigned char *)[yuvData bytes], width, height,
+                          rotated_bgra, outw, outh, orientation);
+
+    img = ncnn::Mat::from_pixels(rotated_bgra, ncnn::Mat::PIXEL_BGRA2RGB, outw,
+                                 outh);
     delete[] rotated_bgra;
-    
+
     width = outw;
     height = outh;
   } else {
