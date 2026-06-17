@@ -57,16 +57,25 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
       }
       
       DispatchQueue.global(qos: .userInitiated).async {
-          let score = self.detector?.detectLiveness(yuvData.data, 
+          guard let det = self.detector else {
+              DispatchQueue.main.async { result(nil) }
+              return
+          }
+          let score = det.detectLiveness(yuvData.data, 
                                               width: width, 
                                               height: height, 
                                               orientation: orientation, 
                                               left: faceBox["left"] ?? 0, 
                                               top: faceBox["top"] ?? 0, 
                                               right: faceBox["right"] ?? 0, 
-                                              bottom: faceBox["bottom"] ?? 0) ?? 0.0
+                                              bottom: faceBox["bottom"] ?? 0)
           DispatchQueue.main.async {
-              result(Double(score))
+              // Negative score is a sentinel meaning "model not loaded" or error
+              if score < 0 {
+                  result(nil)
+              } else {
+                  result(Double(score))
+              }
           }
       }
     case "destroy":

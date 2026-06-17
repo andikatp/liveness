@@ -101,16 +101,36 @@ public:
                   right:(int)right
                  bottom:(int)bottom {
   if (!impl->is_loaded)
-    return 0.0f;
+    return -1.0f;
 
 #if HAS_NCNN
+  // --- Strip row-stride padding from BGRA data ---
+  // iOS camera BGRA may have bytesPerRow > width*4 due to alignment.
+  // ncnn functions assume contiguous data (stride == width * 4).
+  const unsigned char *srcPixels = (const unsigned char *)[yuvData bytes];
+  int expectedSize = width * height * 4;
+  const unsigned char *pixels = srcPixels;
+  unsigned char *strippedBuf = nullptr;
+
+  if ((int)[yuvData length] > expectedSize) {
+    // There is row padding — copy only the pixel data
+    int stride = (int)[yuvData length] / height;
+    strippedBuf = new unsigned char[expectedSize];
+    for (int row = 0; row < height; row++) {
+      memcpy(strippedBuf + row * width * 4,
+             srcPixels + row * stride,
+             width * 4);
+    }
+    pixels = strippedBuf;
+  }
+
   ncnn::Mat img;
   if (orientation > 1 && orientation <= 8) {
     int outw = (orientation >= 5) ? height : width;
     int outh = (orientation >= 5) ? width : height;
 
     unsigned char *rotated_bgra = new unsigned char[outw * outh * 4];
-    ncnn::kanna_rotate_c4((const unsigned char *)[yuvData bytes], width, height,
+    ncnn::kanna_rotate_c4(pixels, width, height,
                           rotated_bgra, outw, outh, orientation);
 
     img = ncnn::Mat::from_pixels(rotated_bgra, ncnn::Mat::PIXEL_BGRA2RGB, outw,
@@ -120,8 +140,12 @@ public:
     width = outw;
     height = outh;
   } else {
-    img = ncnn::Mat::from_pixels((const unsigned char *)[yuvData bytes],
+    img = ncnn::Mat::from_pixels(pixels,
                                  ncnn::Mat::PIXEL_BGRA2RGB, width, height);
+  }
+
+  if (strippedBuf) {
+    delete[] strippedBuf;
   }
 
   float total_score = 0.0f;
