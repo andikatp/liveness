@@ -131,9 +131,9 @@ public:
     unsigned char *rotated_bgra = new unsigned char[outw * outh * 4];
     int ncnn_orientation = orientation;
     if (orientation == 6) {
-        ncnn_orientation = 8;
+      ncnn_orientation = 8;
     } else if (orientation == 8) {
-        ncnn_orientation = 6;
+      ncnn_orientation = 6;
     }
 
     ncnn::kanna_rotate_c4(pixels, width, height, rotated_bgra, outw, outh,
@@ -193,13 +193,19 @@ public:
     int box_width = right - left;
     int box_height = bottom - top;
 
-    float scale = std::min(height / (float)box_height,
-                           std::min(width / (float)box_width, cfg.scale));
+    int side = std::max(box_width, box_height);
 
-    float w = box_width * scale;
-    float h = box_height * scale;
-    float x = left - (w - box_width) / 2.0f;
-    float y = top - (h - box_height) / 2.0f;
+    float scale = std::min(height / (float)side,
+                           std::min(width / (float)side, cfg.scale));
+
+    float w = side * scale;
+    float h = side * scale;
+
+    float cx = left + box_width / 2.0f;
+    float cy = top + box_height / 2.0f;
+
+    float x = cx - w / 2.0f;
+    float y = cy - h / 2.0f;
 
     x = std::max(0.0f, x);
     y = std::max(0.0f, y);
