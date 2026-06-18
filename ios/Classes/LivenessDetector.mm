@@ -139,7 +139,7 @@ public:
     ncnn::kanna_rotate_c4(pixels, width, height, rotated_bgra, outw, outh,
                           ncnn_orientation);
 
-    img = ncnn::Mat::from_pixels(rotated_bgra, ncnn::Mat::PIXEL_BGRA2RGB, outw,
+    img = ncnn::Mat::from_pixels(rotated_bgra, ncnn::Mat::PIXEL_BGRA2BGR, outw,
                                  outh);
     delete[] rotated_bgra;
 
@@ -176,7 +176,7 @@ public:
     width = outw;
     height = outh;
   } else {
-    img = ncnn::Mat::from_pixels(pixels, ncnn::Mat::PIXEL_BGRA2RGB, width,
+    img = ncnn::Mat::from_pixels(pixels, ncnn::Mat::PIXEL_BGRA2BGR, width,
                                  height);
   }
 
