@@ -146,22 +146,22 @@ public:
     // Rotate bounding box coordinates to match the new rotated image dimensions
     int new_left = left, new_top = top, new_right = right, new_bottom = bottom;
 
-    if (orientation == 8) { // Rotate 270 CW (90 CCW)
+    if (ncnn_orientation == 8) { // Rotate 270 CW (90 CCW)
       new_left = top;
       new_top = width - right;
       new_right = bottom;
       new_bottom = width - left;
-    } else if (orientation == 6) { // Rotate 90 CW
+    } else if (ncnn_orientation == 6) { // Rotate 90 CW
       new_left = height - bottom;
       new_top = left;
       new_right = height - top;
       new_bottom = right;
-    } else if (orientation == 3) { // Rotate 180
+    } else if (ncnn_orientation == 3) { // Rotate 180
       new_left = width - right;
       new_top = height - bottom;
       new_right = width - left;
       new_bottom = height - top;
-    } else if (orientation == 7) { // Transverse (flip y + rotate 90 CW)
+    } else if (ncnn_orientation == 7) { // Transverse (flip y + rotate 90 CW)
       new_left = height - bottom;
       new_top = width - right;
       new_right = height - top;
