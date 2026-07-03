@@ -130,11 +130,6 @@ public:
 
     unsigned char *rotated_bgra = new unsigned char[outw * outh * 4];
     int ncnn_orientation = orientation;
-    if (orientation == 6) {
-      ncnn_orientation = 8;
-    } else if (orientation == 8) {
-      ncnn_orientation = 6;
-    }
 
     ncnn::kanna_rotate_c4(pixels, width, height, rotated_bgra, outw, outh,
                           ncnn_orientation);
