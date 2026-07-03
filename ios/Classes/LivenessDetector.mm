@@ -20,12 +20,9 @@
 
 struct ModelConfig {
   float scale;
-  float shift_x;
-  float shift_y;
   int height;
   int width;
   std::string name;
-  bool org_resize;
 };
 
 class LivenessDetectorImpl {
@@ -63,11 +60,10 @@ public:
   if (impl->is_loaded)
     return 0;
 
-  ModelConfig cfg1 = {2.7f, 0.0f, 0.0f, 80, 80, "model_1", false};
-  ModelConfig cfg2 = {4.0f, 0.0f, 0.0f, 80, 80, "model_2", false};
-
-  impl->configs.push_back(cfg1);
-  impl->configs.push_back(cfg2);
+  if (impl->configs.empty()) {
+    impl->configs.push_back({2.7f, 80, 80, "model_1"});
+    impl->configs.push_back({4.0f, 80, 80, "model_2"});
+  }
 
 #if HAS_NCNN
   for (const auto &cfg : impl->configs) {
@@ -82,6 +78,10 @@ public:
 
     if (net->load_param([paramPath UTF8String]) != 0 ||
         net->load_model([binPath UTF8String]) != 0) {
+      delete net;
+      for (auto n : impl->nets)
+        delete n;
+      impl->nets.clear();
       return -1;
     }
     impl->nets.push_back(net);
@@ -92,7 +92,7 @@ public:
   return 0;
 }
 
-- (float)detectLiveness:(NSData *)yuvData
+- (float)detectLiveness:(NSData *)bgraData
                   width:(int)width
                  height:(int)height
             orientation:(int)orientation
@@ -104,23 +104,33 @@ public:
     return -1.0f;
 
 #if HAS_NCNN
+  // --- Validate inputs ---
+  if (!bgraData || left < 0 || top < 0 || right > width || bottom > height ||
+      right <= left || bottom <= top) {
+    return -1.0f;
+  }
+
+  int expectedSize = width * height * 4;
+  if ((int)[bgraData length] < expectedSize && (int)[bgraData length] < width * 4) {
+    return -1.0f;
+  }
+
   // --- Strip row-stride padding from BGRA data ---
   // iOS camera BGRA may have bytesPerRow > width*4 due to alignment.
   // ncnn functions assume contiguous data (stride == width * 4).
-  const unsigned char *srcPixels = (const unsigned char *)[yuvData bytes];
-  int expectedSize = width * height * 4;
+  const unsigned char *srcPixels = (const unsigned char *)[bgraData bytes];
   const unsigned char *pixels = srcPixels;
-  unsigned char *strippedBuf = nullptr;
+  std::vector<unsigned char> strippedBuf;
 
-  if ((int)[yuvData length] > expectedSize) {
+  if ((int)[bgraData length] > expectedSize) {
     // There is row padding — copy only the pixel data
-    int stride = (int)[yuvData length] / height;
-    strippedBuf = new unsigned char[expectedSize];
+    int stride = (int)[bgraData length] / height;
+    strippedBuf.resize(expectedSize);
     for (int row = 0; row < height; row++) {
-      memcpy(strippedBuf + row * width * 4, srcPixels + row * stride,
+      memcpy(strippedBuf.data() + row * width * 4, srcPixels + row * stride,
              width * 4);
     }
-    pixels = strippedBuf;
+    pixels = strippedBuf.data();
   }
 
   ncnn::Mat img;
@@ -128,38 +138,52 @@ public:
     int outw = (orientation >= 5) ? height : width;
     int outh = (orientation >= 5) ? width : height;
 
-    unsigned char *rotated_bgra = new unsigned char[outw * outh * 4];
+    std::vector<unsigned char> rotated_bgra(outw * outh * 4);
     int ncnn_orientation = orientation;
 
-    ncnn::kanna_rotate_c4(pixels, width, height, rotated_bgra, outw, outh,
-                          ncnn_orientation);
+    ncnn::kanna_rotate_c4(pixels, width, height, rotated_bgra.data(), outw,
+                          outh, ncnn_orientation);
 
-    img = ncnn::Mat::from_pixels(rotated_bgra, ncnn::Mat::PIXEL_BGRA2BGR, outw,
-                                 outh);
-    delete[] rotated_bgra;
+    img = ncnn::Mat::from_pixels(rotated_bgra.data(),
+                                 ncnn::Mat::PIXEL_BGRA2BGR, outw, outh);
 
-    // Rotate bounding box coordinates to match the new rotated image dimensions
+    // Rotate bounding box to match the new rotated image dimensions
     int new_left = left, new_top = top, new_right = right, new_bottom = bottom;
 
-    if (ncnn_orientation == 8) { // Rotate 270 CW (90 CCW)
-      new_left = top;
-      new_top = width - right;
-      new_right = bottom;
-      new_bottom = width - left;
-    } else if (ncnn_orientation == 6) { // Rotate 90 CW
-      new_left = height - bottom;
-      new_top = left;
-      new_right = height - top;
-      new_bottom = right;
+    if (ncnn_orientation == 2) { // Mirror horizontal
+      new_left = width - right;
+      new_top = top;
+      new_right = width - left;
+      new_bottom = bottom;
     } else if (ncnn_orientation == 3) { // Rotate 180
       new_left = width - right;
       new_top = height - bottom;
       new_right = width - left;
       new_bottom = height - top;
-    } else if (ncnn_orientation == 7) { // Transverse (flip y + rotate 90 CW)
+    } else if (ncnn_orientation == 4) { // Mirror vertical
+      new_left = left;
+      new_top = height - bottom;
+      new_right = right;
+      new_bottom = height - top;
+    } else if (ncnn_orientation == 5) { // Transpose
+      new_left = top;
+      new_top = left;
+      new_right = bottom;
+      new_bottom = right;
+    } else if (ncnn_orientation == 6) { // Rotate 90 CW
+      new_left = height - bottom;
+      new_top = left;
+      new_right = height - top;
+      new_bottom = right;
+    } else if (ncnn_orientation == 7) { // Transverse
       new_left = height - bottom;
       new_top = width - right;
       new_right = height - top;
+      new_bottom = width - left;
+    } else if (ncnn_orientation == 8) { // Rotate 270 CW (90 CCW)
+      new_left = top;
+      new_top = width - right;
+      new_right = bottom;
       new_bottom = width - left;
     }
 
@@ -175,11 +199,8 @@ public:
                                  height);
   }
 
-  if (strippedBuf) {
-    delete[] strippedBuf;
-  }
-
   float total_score = 0.0f;
+  int valid_models = 0;
 
   for (size_t i = 0; i < impl->nets.size(); i++) {
     ncnn::Net *net = impl->nets[i];
@@ -215,19 +236,28 @@ public:
     ncnn::resize_bilinear(face, in, cfg.width, cfg.height);
 
     ncnn::Extractor ex = net->create_extractor();
-    ex.input("data", in);
+    if (ex.input("data", in) != 0) {
+      continue;
+    }
 
     ncnn::Mat out;
-    ex.extract("softmax", out);
+    if (ex.extract("softmax", out) != 0 || out.empty()) {
+      continue;
+    }
 
     if (out.w >= 2) {
       total_score += out[1];
     } else {
       total_score += out[0];
     }
+    valid_models++;
   }
 
-  return total_score / impl->nets.size();
+  if (valid_models == 0) {
+    return -1.0f;
+  }
+
+  return total_score / valid_models;
 #else
   return 0.0f;
 #endif
