@@ -74,6 +74,11 @@ class LivenessDetector {
      * @return 0 on success, negative value on error
      */
     fun loadModel(assetManager: AssetManager): Int {
+        if (nativeHandler == 0L) {
+            Log.e(TAG, "LivenessDetector is destroyed or not initialized")
+            return -1
+        }
+
         val configs = parseConfig(assetManager)
 
         if (configs.isEmpty()) {
@@ -92,8 +97,7 @@ class LivenessDetector {
      * @param previewHeight Camera preview height
      * @param orientation Camera orientation (0, 90, 180, 270)
      * @param faceBox Detected face bounding box
-     * @return Liveness score (0.0 = fake, 1.0 = real)
-     * @throws IllegalArgumentException if YUV data size is invalid
+     * @return Liveness score (0.0 = fake, 1.0 = real), or -1.0f on invalid input/error
      */
     fun detect(
         yuv: ByteArray,
@@ -102,20 +106,77 @@ class LivenessDetector {
         orientation: Int,
         faceBox: FaceBox
     ): Float {
-        val expectedSize = previewWidth * previewHeight * 3 / 2
-        require(yuv.size == expectedSize) {
-            "Invalid YUV data size. Expected: $expectedSize, got: ${yuv.size}"
+        if (nativeHandler == 0L) {
+            Log.e(TAG, "LivenessDetector is destroyed or not initialized")
+            return -1.0f
         }
+
+        if (previewWidth <= 0 || previewHeight <= 0) {
+            Log.e(TAG, "Invalid preview dimensions: ${previewWidth}x$previewHeight")
+            return -1.0f
+        }
+
+        val expectedSize = previewWidth * previewHeight * 3 / 2
+        if (yuv.size < expectedSize) {
+            Log.e(TAG, "Invalid YUV data size. Expected at least: $expectedSize, got: ${yuv.size}")
+            return -1.0f
+        }
+
+        var left = faceBox.left
+        var top = faceBox.top
+        var right = faceBox.right
+        var bottom = faceBox.bottom
+
+        // If orientation is 5..8 (e.g. 270 deg rotation where width and height swap in C++),
+        // C++ expects the input box to be in the UNROTATED preview space [0..previewWidth, 0..previewHeight].
+        // If the box passed in is already in the ROTATED space (e.g. bottom > previewHeight),
+        // we un-rotate it before passing to nativeDetectYuv so C++ doesn't rotate it a second time out-of-bounds.
+        if (orientation in 5..8 && previewWidth > previewHeight) {
+            if (bottom > previewHeight || top >= previewHeight) {
+                if (orientation == 8) { // Rotate 270 CW (90 CCW)
+                    val origLeft = left
+                    val origTop = top
+                    val origRight = right
+                    val origBottom = bottom
+                    left = previewWidth - origBottom
+                    top = origLeft
+                    right = previewWidth - origTop
+                    bottom = origBottom
+                } else if (orientation == 6) { // Rotate 90 CW
+                    val origLeft = left
+                    val origTop = top
+                    val origRight = right
+                    val origBottom = bottom
+                    left = origTop
+                    top = previewHeight - origRight
+                    right = origBottom
+                    bottom = previewHeight - origLeft
+                }
+            }
+        }
+
+        // Safety check: ensure box coordinates are ordered correctly
+        if (right <= left || bottom <= top) {
+            Log.w(TAG, "Invalid face box dimensions: left=$left, top=$top, right=$right, bottom=$bottom")
+            return -1.0f
+        }
+
+        // Clamp coordinates to image boundaries [0, previewWidth] and [0, previewHeight]
+        // to prevent native C++/OpenCV copy_cut_border out-of-bounds segfaults.
+        left = left.coerceIn(0, previewWidth - 1)
+        top = top.coerceIn(0, previewHeight - 1)
+        right = right.coerceIn(left + 1, previewWidth)
+        bottom = bottom.coerceIn(top + 1, previewHeight)
 
         return nativeDetectYuv(
             yuv,
             previewWidth,
             previewHeight,
             orientation,
-            faceBox.left,
-            faceBox.top,
-            faceBox.right,
-            faceBox.bottom
+            left,
+            top,
+            right,
+            bottom
         )
     }
 

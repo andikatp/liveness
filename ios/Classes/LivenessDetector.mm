@@ -104,9 +104,17 @@ public:
     return -1.0f;
 
 #if HAS_NCNN
-  // --- Validate inputs ---
-  if (!bgraData || left < 0 || top < 0 || right > width || bottom > height ||
-      right <= left || bottom <= top) {
+  if (!bgraData) {
+    return -1.0f;
+  }
+
+  // --- Clamp coordinates to image boundaries ---
+  left = std::max(0, left);
+  top = std::max(0, top);
+  right = std::min(width, right);
+  bottom = std::min(height, bottom);
+
+  if (right <= left || bottom <= top) {
     return -1.0f;
   }
 
@@ -187,10 +195,14 @@ public:
       new_bottom = width - left;
     }
 
-    left = new_left;
-    top = new_top;
-    right = new_right;
-    bottom = new_bottom;
+    left = std::max(0, new_left);
+    top = std::max(0, new_top);
+    right = std::min(outw, new_right);
+    bottom = std::min(outh, new_bottom);
+
+    if (right <= left || bottom <= top) {
+      return -1.0f;
+    }
 
     width = outw;
     height = outh;

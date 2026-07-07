@@ -3,6 +3,7 @@ import UIKit
 
 public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
   private var detector: LivenessDetector?
+  private let queue = DispatchQueue(label: "com.lengdev.livenessdetector.queue", qos: .userInitiated)
 
   private static var registrar: FlutterPluginRegistrar?
 
@@ -18,7 +19,7 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
     case "getPlatformVersion":
       result("iOS " + UIDevice.current.systemVersion)
     case "initialize":
-      DispatchQueue.global(qos: .userInitiated).async {
+      self.queue.async {
           if self.detector == nil {
               self.detector = LivenessDetector()
           }
@@ -56,7 +57,7 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
           return
       }
       
-      DispatchQueue.global(qos: .userInitiated).async {
+      self.queue.async {
           guard let det = self.detector else {
               DispatchQueue.main.async { result(nil) }
               return
@@ -79,9 +80,13 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
           }
       }
     case "destroy":
-      detector?.destroy()
-      detector = nil
-      result(true)
+      self.queue.async {
+          self.detector?.destroy()
+          self.detector = nil
+          DispatchQueue.main.async {
+              result(true)
+          }
+      }
     default:
       result(FlutterMethodNotImplemented)
     }
