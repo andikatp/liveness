@@ -108,34 +108,6 @@ public:
     return -1.0f;
   }
 
-  // Debug: Print raw box from dart
-  NSLog(@"[LivenessDetector] RAW BOX FROM DART: L=%d T=%d R=%d B=%d for image "
-        @"W=%d H=%d (orientation=%d)",
-        left, top, right, bottom, width, height, orientation);
-
-  // If the box is already in the ROTATED space (e.g. its Y coordinates exceed
-  // the unrotated height), we must un-rotate it back to the UNROTATED space
-  // before clamping and passing through the rest of the pipeline.
-  if (orientation > 4 && orientation <= 8 && width > height) {
-    if (bottom > height || top >= height) {
-      int origLeft = left, origTop = top, origRight = right,
-          origBottom = bottom;
-      if (orientation == 6) { // Rotate 90 CW (un-rotate is 90 CCW)
-        left = origTop;
-        top = height - origRight;
-        right = origBottom;
-        bottom = height - origLeft;
-      } else if (orientation == 8) { // Rotate 270 CW (un-rotate is 90 CW)
-        left = width - origBottom;
-        top = origLeft;
-        right = width - origTop;
-        bottom = origRight;
-      }
-      NSLog(@"[LivenessDetector] UN-ROTATED BOX: L=%d T=%d R=%d B=%d", left,
-            top, right, bottom);
-    }
-  }
-
   // --- Clamp coordinates to image boundaries ---
   left = std::max(0, left);
   top = std::max(0, top);
@@ -279,6 +251,12 @@ public:
 
     ncnn::Mat in;
     ncnn::resize_bilinear(face, in, cfg.width, cfg.height);
+
+    // Normalize pixels from [0,255] to [-1,1] — standard PyTorch MiniFASNet
+    // preprocessing.
+    const float mean_vals[3] = {127.5f, 127.5f, 127.5f};
+    const float norm_vals[3] = {1.0f / 128.0f, 1.0f / 128.0f, 1.0f / 128.0f};
+    in.substract_mean_normalize(mean_vals, norm_vals);
 
     ncnn::Extractor ex = net->create_extractor();
     if (ex.input("data", in) != 0) {
