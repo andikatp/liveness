@@ -3,6 +3,7 @@
 // export 'face_anti_spoofing_detector_platform_interface.dart';
 
 
+import 'package:face_anti_spoofing_detector/face_anti_spoofing_detector_method_channel.dart';
 import 'package:face_anti_spoofing_detector/face_anti_spoofing_detector_platform_interface.dart';
 import 'package:flutter/services.dart';
 
@@ -32,6 +33,16 @@ class FaceAntiSpoofingDetector {
         faceContour: faceContour,
         orientation: orientation
       );
+  }
+
+  /// Returns the last native debug log from iOS detector.
+  /// Returns null on Android or if no detection has run yet.
+  static String? get lastNativeDebugLog {
+    final instance = FaceAntiSpoofingDetectorPlatform.instance;
+    if (instance is MethodChannelFaceAntiSpoofingDetector) {
+      return instance.lastNativeDebugLog;
+    }
+    return null;
   }
 
 }

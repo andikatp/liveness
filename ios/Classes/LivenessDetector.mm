@@ -46,12 +46,16 @@ public:
 
 @implementation LivenessDetector {
   LivenessDetectorImpl *impl;
+  NSMutableString *_debugLog;
 }
+
+@synthesize lastDebugLog = _lastDebugLog;
 
 - (instancetype)init {
   self = [super init];
   if (self) {
     impl = new LivenessDetectorImpl();
+    _lastDebugLog = @"";
   }
   return self;
 }
@@ -100,18 +104,26 @@ public:
                     top:(int)top
                   right:(int)right
                  bottom:(int)bottom {
-  if (!impl->is_loaded)
+  // Reset debug log for this call
+  _debugLog = [NSMutableString string];
+  _lastDebugLog = @"";
+
+  if (!impl->is_loaded) {
+    _lastDebugLog = @"[LivenessDetector] model not loaded";
     return -1.0f;
+  }
 
 #if HAS_NCNN
   if (!bgraData) {
+    _lastDebugLog = @"[LivenessDetector] bgraData is nil";
     return -1.0f;
   }
 
   // Debug: Print raw box from dart
-  NSLog(@"[LivenessDetector] RAW BOX FROM DART: L=%d T=%d R=%d B=%d for image "
-        @"W=%d H=%d (orientation=%d)",
-        left, top, right, bottom, width, height, orientation);
+  [_debugLog appendFormat:
+      @"RAW_BOX: L=%d T=%d R=%d B=%d imgW=%d imgH=%d orient=%d dataLen=%d",
+      left, top, right, bottom, width, height, orientation,
+      (int)[bgraData length]];
 
   // If the box is already in the ROTATED space (e.g. its Y coordinates exceed
   // the unrotated height), we must un-rotate it back to the UNROTATED space
@@ -131,37 +143,48 @@ public:
         right = width - origTop;
         bottom = origRight;
       }
-      NSLog(@"[LivenessDetector] UN-ROTATED BOX: L=%d T=%d R=%d B=%d", left,
-            top, right, bottom);
+      [_debugLog appendFormat:@" | UN_ROTATED: L=%d T=%d R=%d B=%d", left,
+                              top, right, bottom];
     }
   }
 
   // --- Clamp coordinates to image boundaries ---
+  int preClampL = left, preClampT = top, preClampR = right, preClampB = bottom;
   left = std::max(0, left);
   top = std::max(0, top);
   right = std::min(width, right);
   bottom = std::min(height, bottom);
 
+  if (preClampL != left || preClampT != top || preClampR != right ||
+      preClampB != bottom) {
+    [_debugLog appendFormat:@" | CLAMPED: L=%d T=%d R=%d B=%d", left, top,
+                            right, bottom];
+  }
+
   if (right <= left || bottom <= top) {
+    [_debugLog appendString:@" | INVALID_BOX_AFTER_CLAMP"];
+    _lastDebugLog = [_debugLog copy];
     return -1.0f;
   }
 
   int expectedSize = width * height * 4;
   if ((int)[bgraData length] < expectedSize &&
       (int)[bgraData length] < width * 4) {
+    [_debugLog appendFormat:@" | DATA_TOO_SMALL: expected=%d got=%d",
+                            expectedSize, (int)[bgraData length]];
+    _lastDebugLog = [_debugLog copy];
     return -1.0f;
   }
 
   // --- Strip row-stride padding from BGRA data ---
-  // iOS camera BGRA may have bytesPerRow > width*4 due to alignment.
-  // ncnn functions assume contiguous data (stride == width * 4).
   const unsigned char *srcPixels = (const unsigned char *)[bgraData bytes];
   const unsigned char *pixels = srcPixels;
   std::vector<unsigned char> strippedBuf;
 
   if ((int)[bgraData length] > expectedSize) {
-    // There is row padding — copy only the pixel data
     int stride = (int)[bgraData length] / height;
+    [_debugLog appendFormat:@" | STRIDE_STRIP: stride=%d expected=%d", stride,
+                            width * 4];
     strippedBuf.resize(expectedSize);
     for (int row = 0; row < height; row++) {
       memcpy(strippedBuf.data() + row * width * 4, srcPixels + row * stride,
@@ -229,7 +252,13 @@ public:
     right = std::min(outw, new_right);
     bottom = std::min(outh, new_bottom);
 
+    [_debugLog appendFormat:@" | ROTATED_IMG: %dx%d BOX_AFTER_ROT: L=%d T=%d "
+                            @"R=%d B=%d",
+                            outw, outh, left, top, right, bottom];
+
     if (right <= left || bottom <= top) {
+      [_debugLog appendString:@" | INVALID_BOX_AFTER_ROT"];
+      _lastDebugLog = [_debugLog copy];
       return -1.0f;
     }
 
@@ -269,9 +298,10 @@ public:
     w = std::min((float)width - x, w);
     h = std::min((float)height - y, h);
 
-    // Debug: print crop box
-    NSLog(@"[LivenessDetector] input img: %dx%d, crop x=%f y=%f w=%f h=%f",
-          width, height, x, y, w, h);
+    [_debugLog
+        appendFormat:
+            @" | M%zu: crop(x=%.0f y=%.0f w=%.0f h=%.0f) scale=%.2f",
+            i, x, y, w, h, scale];
 
     ncnn::Mat face;
     ncnn::copy_cut_border(img, face, (int)y, (int)(height - y - h), (int)x,
@@ -282,19 +312,20 @@ public:
 
     ncnn::Extractor ex = net->create_extractor();
     if (ex.input("data", in) != 0) {
+      [_debugLog appendFormat:@" M%zu:INPUT_FAIL", i];
       continue;
     }
 
     ncnn::Mat out;
     if (ex.extract("softmax", out) != 0 || out.empty()) {
+      [_debugLog appendFormat:@" M%zu:EXTRACT_FAIL", i];
       continue;
     }
 
-    // Debug: log all softmax class probabilities
-    NSLog(@"[LivenessDetector] model_%zu softmax: out[0]=%.6f out[1]=%.6f "
-          @"out[2]=%.6f (w=%d)",
-          i, out.w > 0 ? out[0] : -1.0f, out.w > 1 ? out[1] : -1.0f,
-          out.w > 2 ? out[2] : -1.0f, out.w);
+    // Log softmax outputs
+    [_debugLog
+        appendFormat:@" softmax[%.4f,%.4f](w=%d)", out.w > 0 ? out[0] : -1.0f,
+                     out.w > 1 ? out[1] : -1.0f, out.w];
 
     if (out.w >= 2) {
       total_score += out[1];
@@ -305,11 +336,19 @@ public:
   }
 
   if (valid_models == 0) {
+    [_debugLog appendString:@" | NO_VALID_MODELS"];
+    _lastDebugLog = [_debugLog copy];
     return -1.0f;
   }
 
-  return total_score / valid_models;
+  float finalScore = total_score / valid_models;
+  [_debugLog appendFormat:@" | FINAL=%.4f (%d models)", finalScore,
+                          valid_models];
+  _lastDebugLog = [_debugLog copy];
+
+  return finalScore;
 #else
+  _lastDebugLog = @"[LivenessDetector] SIMULATOR — ncnn disabled";
   return 0.0f;
 #endif
 }

@@ -70,12 +70,13 @@ public class LivenessDetectorPlugin: NSObject, FlutterPlugin {
                                               top: faceBox["top"] ?? 0, 
                                               right: faceBox["right"] ?? 0, 
                                               bottom: faceBox["bottom"] ?? 0)
+          let debugLog = det.lastDebugLog ?? ""
           DispatchQueue.main.async {
               // Negative score is a sentinel meaning "model not loaded" or error
               if score < 0 {
-                  result(nil)
+                  result(["score": NSNull(), "debug": debugLog])
               } else {
-                  result(Double(score))
+                  result(["score": Double(score), "debug": debugLog])
               }
           }
       }

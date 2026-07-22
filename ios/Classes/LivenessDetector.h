@@ -2,6 +2,8 @@
 
 @interface LivenessDetector : NSObject
 
+@property (nonatomic, strong, readonly) NSString *lastDebugLog;
+
 - (int)loadModel:(NSString *)modelPath configPath:(NSString *)configPath;
 - (float)detectLiveness:(NSData *)yuvData 
                   width:(int)width 
