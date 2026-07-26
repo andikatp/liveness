@@ -1,0 +1,7 @@
+.agents/
+.dart_tool/
+.idea/
+build/
+face-antispoof-onnx/
+skills-lock.json
+*.iml

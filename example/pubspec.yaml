@@ -1,0 +1,21 @@
+name: passive_liveness_example
+description: "Example application demonstrating passive face liveness detection using passive_liveness package."
+publish_to: "none"
+
+environment:
+  sdk: ^3.12.2
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  passive_liveness:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
