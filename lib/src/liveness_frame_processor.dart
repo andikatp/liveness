@@ -31,6 +31,7 @@ class LivenessFrameProcessor {
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
     int rotation = 0,
+    bool? isRotatedBoundingBox,
     double threshold = 0.0,
     double expansionFactor = 1.5,
   }) async {
@@ -53,6 +54,7 @@ class LivenessFrameProcessor {
         buffer,
         boundingBox: boundingBox,
         rotation: rotation,
+        isRotatedBoundingBox: isRotatedBoundingBox,
         threshold: threshold,
         expansionFactor: expansionFactor,
       );

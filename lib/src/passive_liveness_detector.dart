@@ -16,10 +16,10 @@ import 'utils/image_preprocessor.dart';
 class PassiveLivenessDetector {
   static const String defaultAssetPath =
       'packages/passive_liveness/assets/best_model.tflite';
-  static const String fallbackAssetPath =
-      'assets/best_model.tflite';
+  static const String fallbackAssetPath = 'assets/best_model.tflite';
 
   Interpreter? _interpreter;
+  IsolateInterpreter? _isolateInterpreter;
   bool _isInitialized = false;
 
   /// Whether the detector interpreter is initialized and ready for inference.
@@ -34,19 +34,35 @@ class PassiveLivenessDetector {
   }) async {
     if (_isInitialized) return;
 
+    final opts =
+        options ??
+        (InterpreterOptions()
+          ..threads = 4
+          ..addDelegate(XNNPackDelegate()));
+
     if (modelBytes != null) {
-      _interpreter = Interpreter.fromBuffer(modelBytes, options: options);
+      _interpreter = Interpreter.fromBuffer(modelBytes, options: opts);
     } else if (filePath != null) {
-      _interpreter = Interpreter.fromFile(File(filePath), options: options);
+      _interpreter = Interpreter.fromFile(File(filePath), options: opts);
     } else {
       final path = assetPath ?? defaultAssetPath;
       try {
-        _interpreter = await Interpreter.fromAsset(path, options: options);
+        _interpreter = await Interpreter.fromAsset(path, options: opts);
       } catch (_) {
         _interpreter = await Interpreter.fromAsset(
           fallbackAssetPath,
-          options: options,
+          options: opts,
         );
+      }
+    }
+
+    if (_interpreter != null) {
+      try {
+        _isolateInterpreter = await IsolateInterpreter.create(
+          address: _interpreter!.address,
+        );
+      } catch (_) {
+        _isolateInterpreter = null;
       }
     }
 
@@ -62,6 +78,7 @@ class PassiveLivenessDetector {
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
     int rotation = 0,
+    bool? isRotatedBoundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
   }) async {
@@ -78,6 +95,7 @@ class PassiveLivenessDetector {
       buffer,
       boundingBox: boundingBox,
       rotation: rotation,
+      isRotatedBoundingBox: isRotatedBoundingBox,
       expansionFactor: expansionFactor,
     );
 
@@ -90,7 +108,11 @@ class PassiveLivenessDetector {
 
     final output = List.generate(1, (_) => List<double>.filled(2, 0.0));
 
-    _interpreter!.run(input, output);
+    if (_isolateInterpreter != null) {
+      await _isolateInterpreter!.run(input, output);
+    } else {
+      _interpreter!.run(input, output);
+    }
     stopwatch.stop();
 
     final logits = output[0];
@@ -159,7 +181,11 @@ class PassiveLivenessDetector {
 
     final output = List.generate(1, (_) => List<double>.filled(2, 0.0));
 
-    _interpreter!.run(input, output);
+    if (_isolateInterpreter != null) {
+      await _isolateInterpreter!.run(input, output);
+    } else {
+      _interpreter!.run(input, output);
+    }
     stopwatch.stop();
 
     final logits = output[0];
@@ -193,6 +219,8 @@ class PassiveLivenessDetector {
 
   /// Close LiteRT interpreter.
   void dispose() {
+    _isolateInterpreter?.close();
+    _isolateInterpreter = null;
     _interpreter?.close();
     _interpreter = null;
     _isInitialized = false;

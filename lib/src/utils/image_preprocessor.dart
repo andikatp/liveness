@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -35,7 +36,7 @@ class ImagePreprocessor {
   /// Preprocesses a raw camera [LivenessImageBuffer] into a Float32 NHWC tensor
   /// `[1, targetSize, targetSize, 3]`.
   ///
-  /// The [boundingBox] is in **raw buffer coordinate space** (as returned by ML Kit).
+  /// The [boundingBox] can be in raw buffer space or rotated frame space (e.g. ML Kit on Android).
   /// The [rotation] parameter (0, 90, 180, 270 degrees CW) specifies how many degrees
   /// the raw buffer must be rotated to become upright. The pixel sampling rotates
   /// the cropped face patch so that the output tensor is always **upright**
@@ -44,6 +45,8 @@ class ImagePreprocessor {
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
     int rotation = 0,
+    bool? isRotatedBoundingBox,
+    bool enableShadowLift = true,
     double expansionFactor = defaultExpansionFactor,
     int targetSize = defaultModelSize,
   }) {
@@ -51,7 +54,6 @@ class ImagePreprocessor {
     final rawH = buffer.height;
     final normRotation = ((rotation % 360) + 360) % 360;
 
-    // Bounding box is in raw buffer coordinate space (same as ML Kit output).
     final faceBbox = boundingBox ??
         FaceBoundingBox(
           x: 0,
@@ -60,11 +62,22 @@ class ImagePreprocessor {
           height: rawH.toDouble(),
         );
 
+    // Auto-detect if bounding box is in rotated frame space [0..rotW, 0..rotH]
+    // (ML Kit on Android returns face bounding boxes in rotated frame space).
+    final bool isRotated = isRotatedBoundingBox ??
+        (Platform.isAndroid && (normRotation == 90 || normRotation == 270)) ||
+        ((normRotation == 90 || normRotation == 270) &&
+            (faceBbox.centerY > rawH || faceBbox.centerX > rawW));
+
+    final effectiveBbox = isRotated
+        ? faceBbox.toRawBufferSpace(rawW, rawH, normRotation)
+        : faceBbox;
+
     // Expand the bounding box and compute square crop in raw buffer space.
-    final maxDim = math.max(faceBbox.width, faceBbox.height);
+    final maxDim = math.max(effectiveBbox.width, effectiveBbox.height);
     final cropSize = math.max(1.0, maxDim * expansionFactor);
-    final cropLeft = faceBbox.centerX - cropSize / 2.0;
-    final cropTop = faceBbox.centerY - cropSize / 2.0;
+    final cropLeft = effectiveBbox.centerX - cropSize / 2.0;
+    final cropTop = effectiveBbox.centerY - cropSize / 2.0;
 
     final tensor = Float32List(1 * targetSize * targetSize * 3);
 
@@ -106,7 +119,7 @@ class ImagePreprocessor {
             relY = (1.0 - normUY) * cropSize;
             break;
           case 270:
-            relX = normUY * cropSize;
+            relX = (1.0 - normUY) * cropSize;
             relY = (1.0 - normUX) * cropSize;
             break;
           case 0:
@@ -147,8 +160,42 @@ class ImagePreprocessor {
             final uvOff = uvRow * uvStride + uvCol * uvPixelStride;
 
             if (uvOff < plane1.length && uvOff < plane2.length) {
-              uVal = plane1[uvOff];
-              vVal = plane2[uvOff];
+              if (buffer.format == LivenessImageFormat.nv21) {
+                vVal = plane1[uvOff];
+                uVal = plane2[uvOff];
+              } else {
+                uVal = plane1[uvOff];
+                vVal = plane2[uvOff];
+              }
+            }
+          } else if (plane1 != null) {
+            // Dual plane (Y in plane0, interleaved UV/VU in plane1)
+            final uvRow = srcY >> 1;
+            final uvCol = srcX >> 1;
+            final p1PixelStride = buffer.planes[1].bytesPerPixel ?? 2;
+            final uvOff = uvRow * uvStride + uvCol * p1PixelStride;
+
+            if (uvOff + 1 < plane1.length) {
+              if (buffer.format == LivenessImageFormat.nv21) {
+                vVal = plane1[uvOff];
+                uVal = plane1[uvOff + 1];
+              } else {
+                uVal = plane1[uvOff];
+                vVal = plane1[uvOff + 1];
+              }
+            }
+          } else if (plane0.length >= rawW * rawH * 3 ~/ 2) {
+            // Single plane packed NV21 / NV12 in plane0
+            final uvOff =
+                p0Stride * rawH + (srcY >> 1) * p0Stride + ((srcX >> 1) << 1);
+            if (uvOff + 1 < plane0.length) {
+              if (buffer.format == LivenessImageFormat.nv21) {
+                vVal = plane0[uvOff];
+                uVal = plane0[uvOff + 1];
+              } else {
+                uVal = plane0[uvOff];
+                vVal = plane0[uvOff + 1];
+              }
             }
           }
 
@@ -167,10 +214,10 @@ class ImagePreprocessor {
       }
     }
 
-    // Low-light shadow-lift compensation:
-    // If the image crop is underexposed in low light (mean RGB < 0.28),
-    // apply a mild linear offset (+0.055 / ~14 RGB levels) to un-clip shadow
-    // gradients so low-light 3D skin features remain clear for MiniFAS.
+    // Low-light & pitch-shadow adaptive compensation:
+    // If the image crop is underexposed or shadowed (mean RGB < 0.35),
+    // apply an adaptive linear offset (+0.04 to +0.085) to un-clip shadow
+    // gradients so low-light pitch/angle 3D skin features remain clear for MiniFAS.
     double meanBrightness = 0.0;
     for (int i = 0; i < tensor.length; i += 3) {
       meanBrightness +=
@@ -178,10 +225,16 @@ class ImagePreprocessor {
     }
     meanBrightness /= (targetSize * targetSize);
 
-    if (meanBrightness < 0.28) {
-      const double boostOffset = 0.055;
+    if (enableShadowLift && meanBrightness > 0.01 && meanBrightness < 0.38) {
+      // Adaptive gamma curve (0.60 to 0.88) lifts dark shadows (eye sockets, cheeks)
+      // while expanding skin texture contrast for MiniFAS in dim light.
+      final double gamma = 0.60 + (meanBrightness / 0.38) * 0.28;
+      final double boostOffset = (0.38 - meanBrightness) * 0.10;
       for (int i = 0; i < tensor.length; i++) {
-        tensor[i] = (tensor[i] + boostOffset).clamp(0.0, 1.0);
+        final val = tensor[i];
+        if (val > 0) {
+          tensor[i] = (math.pow(val, gamma).toDouble() + boostOffset).clamp(0.0, 1.0);
+        }
       }
     }
 
@@ -249,10 +302,14 @@ class ImagePreprocessor {
     }
     meanBrightness /= (targetSize * targetSize);
 
-    if (meanBrightness < 0.28) {
-      const double boostOffset = 0.055;
+    if (meanBrightness > 0.01 && meanBrightness < 0.38) {
+      final double gamma = 0.60 + (meanBrightness / 0.38) * 0.28;
+      final double boostOffset = (0.38 - meanBrightness) * 0.10;
       for (int i = 0; i < tensor.length; i++) {
-        tensor[i] = (tensor[i] + boostOffset).clamp(0.0, 1.0);
+        final val = tensor[i];
+        if (val > 0) {
+          tensor[i] = (math.pow(val, gamma).toDouble() + boostOffset).clamp(0.0, 1.0);
+        }
       }
     }
 

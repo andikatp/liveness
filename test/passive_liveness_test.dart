@@ -58,6 +58,18 @@ void main() {
       expect(rect.width, equals(100.0));
       expect(rect.height, equals(120.0));
     });
+
+    test('toRawBufferSpace transforms 270 deg rotated bounding box correctly', () {
+      // Rotated 1080x1920 space: center at (540, 960), size (400, 600)
+      const rotBbox = FaceBoundingBox(x: 340, y: 660, width: 400, height: 600);
+      final rawBbox = rotBbox.toRawBufferSpace(1920, 1080, 270);
+
+      // Raw 1920x1080 space: rawCx = 1920 - 960 = 960, rawCy = 540
+      expect(rawBbox.centerX, equals(960.0));
+      expect(rawBbox.centerY, equals(540.0));
+      expect(rawBbox.width, equals(600.0));
+      expect(rawBbox.height, equals(400.0));
+    });
   });
 
   group('ImagePreprocessor tests', () {
@@ -138,6 +150,7 @@ void main() {
         buffer,
         boundingBox: bbox,
         expansionFactor: 1.0,
+        enableShadowLift: false,
         targetSize: 10,
       );
 

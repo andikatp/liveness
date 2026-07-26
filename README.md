@@ -10,11 +10,11 @@ An ultra-lightweight, high-performance passive face anti-spoofing (liveness) det
 
 ## Features
 
-- ⚡ **High-Performance Edge Inference**: Uses MiniFASNet v2 SE model via `flutter_litert`, achieving **~20–40ms** inference time on mobile devices.
+- ⚡ **High-Performance Edge Inference**: Uses MiniFASNet v2 SE model via `flutter_litert`, offloading inference to a dedicated **background Dart isolate** (`IsolateInterpreter`) with **XNNPack ARM NEON SIMD vectorization**.
 - 📷 **Zero-Copy Camera Stream Processing**: Preprocesses raw Flutter `CameraImage` byte buffers (`NV21` / `YUV420` on Android, `BGRA8888` on iOS) directly to TFLite tensors without main-thread image decoding.
 - 🖼️ **Static Photo & File Detection**: Uses Flutter's built-in C++ Skia engine codecs (`dart:ui`) to evaluate liveness from static images (`File` or `Uint8List`) with **zero external image package dependencies**.
-- 📱 **Rotation & Sensor Alignment**: Closed-form pixel sampling matching OpenCV `BORDER_REFLECT_101` supporting `0°`, `90°`, `180°`, and `270°` camera sensor rotations.
-- 💡 **Low-Light Shadow-Lift Compensation**: Automatically un-clips shadow gradients in dark or underexposed room environments.
+- 📱 **Android Rotated Bounding Box Mapping**: Built-in `isRotatedBoundingBox` auto-detection and `FaceBoundingBox.toRawBufferSpace()` transformation for portrait ML Kit face detection bounding boxes on Android (`0°`, `90°`, `180°`, `270°`).
+- 💡 **Low-Light Adaptive Gamma Contrast Expansion**: Non-linear gamma power-law contrast enhancement ($\gamma \approx 0.60 - 0.88$) that expands 3D skin texture gradients in dim room lighting.
 
 ---
 
@@ -48,6 +48,7 @@ await detector.initialize();
 Pass raw `CameraImage` frames from `camera` package along with an optional face bounding box (e.g. from Google ML Kit Face Detection):
 
 ```dart
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:passive_liveness/passive_liveness.dart';
 
@@ -76,7 +77,8 @@ void processCameraFrame(CameraImage cameraImage, Rect? faceRect, int sensorRotat
   final LivenessResult result = await detector.detectLivenessFromBuffer(
     buffer,
     boundingBox: boundingBox,
-    rotation: sensorRotation, // e.g., 90 for iOS/Android front camera
+    rotation: sensorRotation, // e.g., 270 on Android front camera, 90 on iOS
+    isRotatedBoundingBox: Platform.isAndroid, // Maps portrait ML Kit face box to raw landscape buffer space
   );
 
   if (result.isReal) {
@@ -156,7 +158,7 @@ void dispose() {
 |---|---|
 | `PassiveLivenessDetector` | Main engine class for initializing the model and running inferences. |
 | `LivenessImageBuffer` | Lightweight container for camera raw byte planes (`NV21`, `YUV420`, `BGRA8888`). |
-| `FaceBoundingBox` | Coordinates (`x`, `y`, `width`, `height`) defining the face area. Supports `.fromRect(Rect)`. |
+| `FaceBoundingBox` | Coordinates (`x`, `y`, `width`, `height`) defining the face area. Supports `.fromRect(Rect)` and `.toRawBufferSpace()`. |
 | `LivenessResult` | Detection result containing `isReal`, `realScore`, `spoofScore`, `logitDiff`, and `inferenceTime`. |
 
 ---

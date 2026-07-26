@@ -1,3 +1,12 @@
+## 0.0.2
+
+- **Fix Android ML Kit Bounding Box Coordinate System Mismatch**: Fixed false spoof classification on Android caused by portrait bounding box offsets. Added `isRotatedBoundingBox` parameter and `FaceBoundingBox.toRawBufferSpace()` transformation for `0°`, `90°`, `180°`, and `270°` sensor angles.
+- **Fix Android 270° Front Camera Upside-Down Crop**: Corrected `case 270` coordinate mapping in `ImagePreprocessor` to ensure MiniFAS receives upright face crops.
+- **Offload Inference to Background Isolate (`IsolateInterpreter`)**: Prevented main UI isolate frame drops by running LiteRT inference asynchronously on a dedicated background Dart isolate.
+- **Add XNNPack ARM NEON SIMD Hardware Vectorization**: Enabled `XNNPackDelegate` for 2x–4x CPU matrix multiplication speedup on mobile chipsets.
+- **Fast NV21 Plane Copy**: Optimized `_getNv21Bytes` to replace 518,400 Dart loop iterations with native `setRange` array copies.
+- **Low-Light Adaptive Gamma Contrast Expansion**: Replaced linear boost with adaptive power-law gamma curve ($\gamma \approx 0.60 - 0.88$) to expand 3D skin texture gradients in dim lighting.
+
 ## 0.0.1
 
 - Initial release of `passive_liveness`.
