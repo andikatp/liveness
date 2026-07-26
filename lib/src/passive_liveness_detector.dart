@@ -14,9 +14,15 @@ import 'utils/image_preprocessor.dart';
 /// Uses the **MiniFASNet v2 SE** architecture derived from
 /// [facenox/face-antispoof-onnx](https://github.com/facenox/face-antispoof-onnx).
 class PassiveLivenessDetector {
+  /// Default asset path for the TFLite model package asset.
   static const String defaultAssetPath =
       'packages/passive_liveness/assets/best_model.tflite';
+
+  /// Fallback asset path when loaded directly within host application.
   static const String fallbackAssetPath = 'assets/best_model.tflite';
+
+  /// Creates a new [PassiveLivenessDetector] instance.
+  PassiveLivenessDetector();
 
   Interpreter? _interpreter;
   IsolateInterpreter? _isolateInterpreter;

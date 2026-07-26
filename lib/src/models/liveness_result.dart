@@ -1,7 +1,13 @@
 import 'dart:math' as math;
 
 /// Status of passive liveness detection result.
-enum LivenessStatus { real, spoof }
+enum LivenessStatus {
+  /// Classified as a real face.
+  real,
+
+  /// Classified as a spoof attempt.
+  spoof,
+}
 
 /// Result of passive liveness detection for a face.
 class LivenessResult {

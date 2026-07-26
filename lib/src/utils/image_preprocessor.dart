@@ -7,6 +7,7 @@ import '../models/liveness_image_buffer.dart';
 
 /// Preprocessing utilities for passive face anti-spoofing input.
 class ImagePreprocessor {
+  const ImagePreprocessor._();
   /// Default input size expected by MiniFAS model (128x128).
   static const int defaultModelSize = 128;
 

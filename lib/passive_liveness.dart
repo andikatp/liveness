@@ -1,3 +1,4 @@
+/// Passive face liveness and anti-spoofing detection library for Flutter.
 library;
 
 export 'src/liveness_frame_processor.dart';
