@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:passive_liveness/passive_liveness.dart';
 
@@ -54,27 +55,46 @@ class _LivenessHomePageState extends State<LivenessHomePage> {
     }
   }
 
-  Future<void> _testSyntheticLiveness() async {
+  /// Generates a valid in-memory PNG image byte array for testing.
+  Future<Uint8List> _createSampleImageBytes() async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, 200, 200));
+
+    // Background skin-tone canvas
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, 200, 200),
+      Paint()..color = const Color(0xFFF5D0A9),
+    );
+
+    // Draw face oval
+    canvas.drawOval(
+      const Rect.fromLTWH(40, 30, 120, 140),
+      Paint()..color = const Color(0xFFE5B089),
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(200, 200);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    picture.dispose();
+    return byteData!.buffer.asUint8List();
+  }
+
+  Future<void> _testLiveness() async {
     if (!_initialized) return;
 
-    // Create a 100x100 synthetic image byte array (dummy RGBA bytes)
-    final bytes = Uint8List(100 * 100 * 4);
-    for (int i = 0; i < bytes.length; i += 4) {
-      bytes[i] = 210;     // R
-      bytes[i + 1] = 170; // G
-      bytes[i + 2] = 140; // B
-      bytes[i + 3] = 255; // A
-    }
-
     try {
+      final imageBytes = await _createSampleImageBytes();
+
       final result = await _detector.detectLivenessFromImageBytes(
-        bytes,
-        boundingBox: const FaceBoundingBox(x: 20, y: 20, width: 60, height: 60),
+        imageBytes,
+        boundingBox: const FaceBoundingBox(x: 40, y: 30, width: 120, height: 140),
       );
 
       setState(() {
         _status = 'Liveness Result: ${result.status.name.toUpperCase()}\n'
             'Real Score: ${(result.realScore * 100).toStringAsFixed(1)}%\n'
+            'Spoof Score: ${(result.spoofScore * 100).toStringAsFixed(1)}%\n'
             'Logit Diff: ${result.logitDiff.toStringAsFixed(2)}\n'
             'Inference Time: ${result.inferenceTime.inMilliseconds}ms';
       });
@@ -119,7 +139,7 @@ class _LivenessHomePageState extends State<LivenessHomePage> {
               ),
               const SizedBox(height: 32),
               ElevatedButton.icon(
-                onPressed: _initialized ? _testSyntheticLiveness : null,
+                onPressed: _initialized ? _testLiveness : null,
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Run Test Liveness'),
               ),
