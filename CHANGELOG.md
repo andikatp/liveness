@@ -1,3 +1,13 @@
+## 0.0.3
+
+- **Android Sensor Coordinate Rotation & Accuracy Fixes**: Fixed coordinate transformation for Android ML Kit portrait face bounding boxes across all sensor angles (`0°`, `90°`, `180°`, `270°`), ensuring accurate upright crops and resolving false spoof detections on Android devices.
+- **Low-Light & Dark Environments Compensation**: Enhanced anti-spoofing accuracy in dim lighting using adaptive power-law gamma expansion ($\gamma \approx 0.60 - 0.88$) and dynamic contrast stretching without corrupting facial texture liveness signals.
+- **Glasses Glare & Specular Reflection Resilience**: Implemented Asymmetric Exponential Moving Average (EMA) score filtering ($\alpha=0.1$ for score drops, $\alpha=0.4$ for recovery) to prevent momentary specular lens reflections on glasses from triggering false spoof classifications.
+- **LiteRT Next `CompiledModel` Zero-Copy Acceleration**: Integrated LiteRT Next `CompiledModel` support for zero-copy GPU/CPU hardware acceleration with automatic fallback to classic `Interpreter`.
+- **Flexible Model Tensor Layout Support**: Added automatic shape inspection to support both NCHW (`[1, 3, H, W]`) and NHWC (`[1, H, W, 3]`) tensor models.
+- **Edge Pixel Replication (`BORDER_REPLICATE`)**: Improved image preprocessor boundary handling to eliminate pitch-black border artifacts on tight face crops.
+- **Pending Result & EMA Tracker Controls**: Added `LivenessResult.pending()` factory constructor and `resetEma()` controls for handling motion transition frames cleanly.
+
 ## 0.0.2
 
 - **Fix Android ML Kit Bounding Box Coordinate System Mismatch**: Fixed false spoof classification on Android caused by portrait bounding box offsets. Added `isRotatedBoundingBox` parameter and `FaceBoundingBox.toRawBufferSpace()` transformation for `0°`, `90°`, `180°`, and `270°` sensor angles.
