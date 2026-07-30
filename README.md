@@ -10,11 +10,43 @@ An ultra-lightweight, high-performance passive face anti-spoofing (liveness) det
 
 ## Features
 
-- ⚡ **High-Performance Edge Inference**: Uses MiniFASNet v2 SE model via `flutter_litert`, offloading inference to a dedicated **background Dart isolate** (`IsolateInterpreter`) with **XNNPack ARM NEON SIMD vectorization**.
+- ⚡ **LiteRT Next Hardware Acceleration**: Powered by `flutter_litert` `CompiledModel` with zero-copy hardware acceleration (GPU / NPU / CPU fallback).
+- 🔓 **100% Standalone (No ML Kit Required)**: Works directly out-of-the-box on raw images or camera streams without needing Google ML Kit or third-party face detectors.
 - 📷 **Zero-Copy Camera Stream Processing**: Preprocesses raw Flutter `CameraImage` byte buffers (`NV21` / `YUV420` on Android, `BGRA8888` on iOS) directly to TFLite tensors without main-thread image decoding.
+- 👓 **Glasses Glare Resistance (Asymmetric EMA)**: Uses Asymmetric Exponential Moving Average filtering ($\alpha=0.1$ for score drops, $\alpha=0.4$ for recovery) to resist momentary specular reflections on glasses.
+- 🏃 **Motion Gate & Stability Heuristic**: Tracks bounding box delta shifts to bypass inference on motion-blurred or out-of-focus frames during user movement.
 - 🖼️ **Static Photo & File Detection**: Uses Flutter's built-in C++ Skia engine codecs (`dart:ui`) to evaluate liveness from static images (`File` or `Uint8List`) with **zero external image package dependencies**.
 - 📱 **Android Rotated Bounding Box Mapping**: Built-in `isRotatedBoundingBox` auto-detection and `FaceBoundingBox.toRawBufferSpace()` transformation for portrait ML Kit face detection bounding boxes on Android (`0°`, `90°`, `180°`, `270°`).
-- 💡 **Low-Light Adaptive Gamma Contrast Expansion**: Non-linear gamma power-law contrast enhancement ($\gamma \approx 0.60 - 0.88$) that expands 3D skin texture gradients in dim room lighting.
+- 💡 **Adaptive Contrast Stretching & Edge Clamping**: Automatically normalizes dark backlit faces and uses Edge Pixel Replication (`BORDER_REPLICATE`) to eliminate black border artifacts.
+
+---
+
+## Do I Need Google ML Kit or a Face Detector?
+
+### Short Answer: **NO!** 
+
+The `boundingBox` parameter is **100% OPTIONAL**. 
+
+If you don't pass a `boundingBox`, `passive_liveness` automatically uses the **entire image frame** as the face region. You can run liveness detection in just **one line of code**!
+
+### How Bounding Box Works:
+
+- **Without Face Detector (Default - Super Easy):**
+  Simply pass your camera buffer, photo file, or bytes. `passive_liveness` evaluates the entire image automatically:
+  ```dart
+  // Works out of the box without ML Kit!
+  final result = await detector.detectLivenessFromImageBytes(imageBytes);
+  ```
+
+- **With Face Detector (Optional - Advanced Precision):**
+  If your app already uses a face detector (like `google_mlkit_face_detection`), passing `FaceBoundingBox.fromRect(face.boundingBox)` crops directly onto the detected face for pinpoint accuracy:
+  ```dart
+  // Optional: pass boundingBox if you have ML Kit
+  final result = await detector.detectLivenessFromImageBytes(
+    imageBytes,
+    boundingBox: FaceBoundingBox.fromRect(faceRect),
+  );
+  ```
 
 ---
 
@@ -45,15 +77,12 @@ await detector.initialize();
 
 ### 2. Real-Time Camera Stream Detection (`CameraImage`)
 
-Pass raw `CameraImage` frames from `camera` package along with an optional face bounding box (e.g. from Google ML Kit Face Detection):
-
+#### Option A: Simple (Without ML Kit - Full Frame)
 ```dart
-import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:passive_liveness/passive_liveness.dart';
 
-void processCameraFrame(CameraImage cameraImage, Rect? faceRect, int sensorRotation) async {
-  // Convert CameraImage into LivenessImageBuffer
+void processCameraFrame(CameraImage cameraImage, int sensorRotation) async {
   final buffer = LivenessImageBuffer(
     width: cameraImage.width,
     height: cameraImage.height,
@@ -71,27 +100,55 @@ void processCameraFrame(CameraImage cameraImage, Rect? faceRect, int sensorRotat
         .toList(),
   );
 
-  // Convert Rect to FaceBoundingBox
+  // No boundingBox passed - evaluates full frame!
+  final LivenessResult result = await detector.detectLivenessFromBuffer(
+    buffer,
+    rotation: sensorRotation,
+  );
+
+  if (result.isReal) {
+    print('Real human face!');
+  } else {
+    print('Spoof face detected!');
+  }
+}
+```
+
+#### Option B: Advanced (With ML Kit Face Detector)
+```dart
+  // Pass faceRect from ML Kit
   final boundingBox = faceRect != null ? FaceBoundingBox.fromRect(faceRect) : null;
 
   final LivenessResult result = await detector.detectLivenessFromBuffer(
     buffer,
     boundingBox: boundingBox,
-    rotation: sensorRotation, // e.g., 270 on Android front camera, 90 on iOS
-    isRotatedBoundingBox: Platform.isAndroid, // Maps portrait ML Kit face box to raw landscape buffer space
+    rotation: sensorRotation,
+    isRotatedBoundingBox: Platform.isAndroid,
   );
-
-  if (result.isReal) {
-    print('Real human face! Real score: ${result.realScore.toStringAsFixed(3)}');
-  } else {
-    print('Spoof face detected! Spoof score: ${result.spoofScore.toStringAsFixed(3)}');
-  }
-}
 ```
 
 ---
 
-### 3. Detect Liveness from Static Photo File (`File`)
+### 3. Using `LivenessFrameProcessor` for Smooth Streaming
+
+For stream processing with automatic motion gating and frame throttling:
+
+```dart
+final processor = LivenessFrameProcessor(
+  detector: detector,
+  throttleInterval: const Duration(milliseconds: 150),
+);
+
+// In your camera stream listener:
+final LivenessResult? result = await processor.processBufferFrame(
+  buffer,
+  rotation: sensorRotation,
+);
+```
+
+---
+
+### 4. Detect Liveness from Static Photo File (`File`)
 
 Evaluate a photo file picked via `image_picker` or taken with `takePicture()`:
 
@@ -99,12 +156,10 @@ Evaluate a photo file picked via `image_picker` or taken with `takePicture()`:
 import 'dart:io';
 import 'package:passive_liveness/passive_liveness.dart';
 
-Future<void> checkPhotoLiveness(File imageFile, Rect? faceRect) async {
-  final boundingBox = faceRect != null ? FaceBoundingBox.fromRect(faceRect) : null;
-
+Future<void> checkPhotoLiveness(File imageFile) async {
+  // Works directly on the file - boundingBox is optional!
   final LivenessResult result = await detector.detectLivenessFromImageFile(
     imageFile,
-    boundingBox: boundingBox,
   );
 
   print('Is Real: ${result.isReal}');
@@ -115,7 +170,7 @@ Future<void> checkPhotoLiveness(File imageFile, Rect? faceRect) async {
 
 ---
 
-### 4. Detect Liveness from Image Bytes (`Uint8List`)
+### 5. Detect Liveness from Image Bytes (`Uint8List`)
 
 Evaluate liveness directly from in-memory image bytes:
 
@@ -123,12 +178,10 @@ Evaluate liveness directly from in-memory image bytes:
 import 'dart:typed_data';
 import 'package:passive_liveness/passive_liveness.dart';
 
-Future<void> checkBytesLiveness(Uint8List imageBytes, {Rect? faceRect}) async {
-  final boundingBox = faceRect != null ? FaceBoundingBox.fromRect(faceRect) : null;
-
+Future<void> checkBytesLiveness(Uint8List imageBytes) async {
+  // Works directly on raw bytes - boundingBox is optional!
   final LivenessResult result = await detector.detectLivenessFromImageBytes(
     imageBytes,
-    boundingBox: boundingBox,
   );
 
   print('Is Real: ${result.isReal}');
@@ -156,10 +209,25 @@ void dispose() {
 
 | Class | Description |
 |---|---|
-| `PassiveLivenessDetector` | Main engine class for initializing the model and running inferences. |
+| `PassiveLivenessDetector` | Main engine class for initializing the LiteRT model and running inferences. |
+| `LivenessFrameProcessor` | Stream processor with motion-gating heuristic and frame throttling. |
 | `LivenessImageBuffer` | Lightweight container for camera raw byte planes (`NV21`, `YUV420`, `BGRA8888`). |
-| `FaceBoundingBox` | Coordinates (`x`, `y`, `width`, `height`) defining the face area. Supports `.fromRect(Rect)` and `.toRawBufferSpace()`. |
+| `FaceBoundingBox` | Coordinates (`x`, `y`, `width`, `height`) defining the face area. **Optional**. Supports `.fromRect(Rect)`. |
 | `LivenessResult` | Detection result containing `isReal`, `realScore`, `spoofScore`, `logitDiff`, and `inferenceTime`. |
+
+---
+
+## Recent Improvements & Changelog
+
+### 🚀 Performance & Accuracy Upgrades
+- **LiteRT Next `CompiledModel` Integration:** Upgraded engine to `flutter_litert` `CompiledModel` with zero-copy hardware acceleration (GPU / NPU / CPU fallback).
+- **Standalone Support (Optional BoundingBox):** Bounding box parameter is optional; default fallback automatically processes the full image frame.
+- **Asymmetric EMA Glare Resistance:** Implemented Asymmetric Exponential Moving Average ($\alpha=0.1$ for score drops, $\alpha=0.4$ for recovery) to prevent specular lens reflections on **glasses** from causing false spoof drops.
+- **Bounding Box Motion Stability Gate:** Added motion stability heuristic ($5\%$ position/size shift threshold) in `LivenessFrameProcessor` to bypass TFLite inference during user movement.
+- **Android Sensor Coordinate Rotation:** Auto-transforms ML Kit portrait face bounding boxes to match raw landscape sensor buffers (`0°`, `90°`, `180°`, `270°`).
+- **Edge Pixel Replication (`BORDER_REPLICATE`):** Switched from zero-padding to coordinate clamping (`rawX.round().clamp(0, rawW - 1)`), eliminating pitch-black border artifacts on edge face crops.
+- **Adaptive Contrast Stretching:** Added `enableContrastStretch` option to automatically brighten dark, backlit face crops without distorting skin moiré signals.
+- **Visual Tensor Dumper:** Added `ImagePreprocessor.saveTensorToDisk(...)` to export 128x128 Float32List tensors to PNG/PPM images for debugging.
 
 ---
 

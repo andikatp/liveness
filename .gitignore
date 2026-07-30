@@ -31,4 +31,6 @@ doc/
 /coverage/
 face-antispoof-onnx/
 .agents/
+graphify-out
 skills-lock.json
+AGENTS.md

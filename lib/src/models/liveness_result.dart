@@ -55,6 +55,24 @@ class LivenessResult {
     required this.inferenceTime,
   });
 
+  /// Factory constructor for pending/unstable frames.
+  factory LivenessResult.pending({
+    double threshold = 0.0,
+  }) {
+    return LivenessResult(
+      isReal: false,
+      status: LivenessStatus.spoof,
+      realScore: 0.5,
+      spoofScore: 0.5,
+      realLogit: 0.0,
+      spoofLogit: 0.0,
+      logitDiff: 0.0,
+      confidence: 0.0,
+      threshold: threshold,
+      inferenceTime: Duration.zero,
+    );
+  }
+
   /// Factory constructor to calculate probabilities and classification from raw logits.
   factory LivenessResult.fromLogits({
     required double realLogit,

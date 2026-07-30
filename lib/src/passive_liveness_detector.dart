@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_litert/flutter_litert.dart';
 
 import 'models/face_bounding_box.dart';
@@ -11,8 +13,8 @@ import 'utils/image_preprocessor.dart';
 
 /// Core passive liveness detector engine using MiniFAS LiteRT (TFLite) model.
 ///
-/// Uses the **MiniFASNet v2 SE** architecture derived from
-/// [facenox/face-antispoof-onnx](https://github.com/facenox/face-antispoof-onnx).
+/// Supports LiteRT Next (`CompiledModel`) for zero-copy hardware acceleration (GPU / CPU)
+/// with classic `Interpreter` fallback.
 class PassiveLivenessDetector {
   /// Default asset path for the TFLite model package asset.
   static const String defaultAssetPath =
@@ -21,29 +23,63 @@ class PassiveLivenessDetector {
   /// Fallback asset path when loaded directly within host application.
   static const String fallbackAssetPath = 'assets/best_model.tflite';
 
+  /// Default Exponential Moving Average (EMA) alpha for score smoothing.
+  static const double defaultEmaAlpha = 0.3;
+
   /// Creates a new [PassiveLivenessDetector] instance.
   PassiveLivenessDetector();
 
+  CompiledModel? _compiledModel;
   Interpreter? _interpreter;
   IsolateInterpreter? _isolateInterpreter;
   bool _isInitialized = false;
 
-  /// Whether the detector interpreter is initialized and ready for inference.
-  bool get isInitialized => _isInitialized && _interpreter != null;
+  /// Input tensor shape of the loaded model (e.g. [1, 128, 128, 3] or [1, 3, 128, 128]).
+  List<int>? _modelInputShape;
 
-  /// Initialize the LiteRT interpreter for passive liveness detection.
+  /// Whether the model natively expects NCHW format (`[1, 3, H, W]`).
+  bool _isNativeNchw = false;
+
+  /// Target spatial resolution expected by model (e.g. 128 or 80).
+  int _modelTargetSize = ImagePreprocessor.defaultModelSize;
+
+  /// The current Exponential Moving Average (EMA) of the real score.
+  double? _emaRealScore;
+
+  /// Returns the current EMA real score.
+  double? get emaRealScore => _emaRealScore;
+
+  /// Resets the EMA real score tracker.
+  void resetEma() {
+    _emaRealScore = null;
+  }
+
+  /// Whether the detector is initialized and ready for inference.
+  bool get isInitialized =>
+      _isInitialized && (_compiledModel != null || _interpreter != null);
+
+  /// Initialize the LiteRT model for passive liveness detection.
+  ///
+  /// Set [useCompiledModel] to `true` (default) to use LiteRT Next `CompiledModel` for zero-copy
+  /// GPU/hardware acceleration.
   Future<void> initialize({
     String? assetPath,
     String? filePath,
     Uint8List? modelBytes,
+    Set<Accelerator>? accelerators,
     InterpreterOptions? options,
+    bool enableIsolate = false,
+    bool useCompiledModel = true,
   }) async {
     if (_isInitialized) return;
 
+    final accels = accelerators ?? {Accelerator.gpu, Accelerator.cpu};
+
+    // Always create classic interpreter for shape inspection and fallback
     final opts =
         options ??
         (InterpreterOptions()
-          ..threads = 4
+          ..threads = 2
           ..addDelegate(XNNPackDelegate()));
 
     if (modelBytes != null) {
@@ -64,6 +100,76 @@ class PassiveLivenessDetector {
 
     if (_interpreter != null) {
       try {
+        final inputTensor = _interpreter!.getInputTensor(0);
+        _modelInputShape = List<int>.from(inputTensor.shape);
+        // Diagnostics Log #1: Log Model's Expected Shape
+        // ignore: avoid_print
+        print(
+          '[PASSIVE_LIVENESS] TFLite model native expected input shape: $_modelInputShape, type: ${inputTensor.type}',
+        );
+
+        if (_modelInputShape != null && _modelInputShape!.length == 4) {
+          if (_modelInputShape![1] == 3) {
+            _isNativeNchw = true;
+            _modelTargetSize = _modelInputShape![2];
+          } else {
+            _isNativeNchw = false;
+            _modelTargetSize = _modelInputShape![1];
+          }
+        }
+      } catch (e) {
+        // ignore: avoid_print
+        print('[PASSIVE_LIVENESS] Failed to inspect model input shape: $e');
+        _modelInputShape = null;
+      }
+    }
+
+    // Try compiled model for LiteRT Next zero-copy path if requested and no custom options/isolates
+    if (useCompiledModel && options == null && !enableIsolate) {
+      try {
+        if (modelBytes != null) {
+          _compiledModel = CompiledModel.fromBuffer(
+            modelBytes,
+            accelerators: accels,
+          );
+        } else if (filePath != null) {
+          _compiledModel = CompiledModel.fromFile(
+            filePath,
+            accelerators: accels,
+          );
+        } else {
+          final path = assetPath ?? defaultAssetPath;
+          try {
+            final bd = await rootBundle.load(path);
+            final bytes = bd.buffer.asUint8List(
+              bd.offsetInBytes,
+              bd.lengthInBytes,
+            );
+            _compiledModel = CompiledModel.fromBuffer(
+              bytes,
+              accelerators: accels,
+            );
+          } catch (_) {
+            final bd = await rootBundle.load(fallbackAssetPath);
+            final bytes = bd.buffer.asUint8List(
+              bd.offsetInBytes,
+              bd.lengthInBytes,
+            );
+            _compiledModel = CompiledModel.fromBuffer(
+              bytes,
+              accelerators: accels,
+            );
+          }
+        }
+      } catch (e) {
+        // ignore: avoid_print
+        print('[PASSIVE_LIVENESS] CompiledModel fallback to Interpreter: $e');
+        _compiledModel = null;
+      }
+    }
+
+    if (_interpreter != null && enableIsolate && _compiledModel == null) {
+      try {
         _isolateInterpreter = await IsolateInterpreter.create(
           address: _interpreter!.address,
         );
@@ -75,11 +181,83 @@ class PassiveLivenessDetector {
     _isInitialized = true;
   }
 
+  void _ensureInputShapeAllocated({
+    required int targetSize,
+    required bool useNchw,
+  }) {
+    if (_interpreter == null) return;
+    final targetShape = useNchw
+        ? [1, 3, targetSize, targetSize]
+        : [1, targetSize, targetSize, 3];
+
+    final currentShape = _interpreter!.getInputTensor(0).shape;
+    bool shapesMatch = currentShape.length == targetShape.length;
+    if (shapesMatch) {
+      for (int i = 0; i < currentShape.length; i++) {
+        if (currentShape[i] != targetShape[i]) {
+          shapesMatch = false;
+          break;
+        }
+      }
+    }
+
+    if (!shapesMatch) {
+      _interpreter!.resizeInputTensor(0, targetShape);
+      _interpreter!.allocateTensors();
+    }
+  }
+
+  void _logTensorStats(Float32List tensorData) {
+    if (tensorData.isEmpty) return;
+    double minVal = tensorData[0];
+    double maxVal = tensorData[0];
+    double sumVal = 0.0;
+    for (int i = 0; i < tensorData.length; i++) {
+      final v = tensorData[i];
+      if (v < minVal) minVal = v;
+      if (v > maxVal) maxVal = v;
+      sumVal += v;
+    }
+    final double meanVal = sumVal / tensorData.length;
+    final inputShape = _interpreter?.getInputTensor(0).shape;
+    // Diagnostics Log #1 & #2
+    // ignore: avoid_print
+    print(
+      '[PASSIVE_LIVENESS] Interpreter Input Shape: $inputShape | Tensor stats -> min: ${minVal.toStringAsFixed(4)}, max: ${maxVal.toStringAsFixed(4)}, mean: ${meanVal.toStringAsFixed(4)}, len: ${tensorData.length}',
+    );
+  }
+
+  Future<List<double>> _runInference({
+    required Float32List tensorData,
+    required bool effectiveUseNchw,
+    required int effectiveTargetSize,
+    required bool runOnIsolate,
+  }) async {
+    if (_compiledModel != null) {
+      final outputs = _compiledModel!.run([tensorData]);
+      return outputs[0];
+    } else {
+      final input = effectiveUseNchw
+          ? tensorData.reshape([1, 3, effectiveTargetSize, effectiveTargetSize])
+          : tensorData.reshape([
+              1,
+              effectiveTargetSize,
+              effectiveTargetSize,
+              3,
+            ]);
+
+      final output = List.generate(1, (_) => List<double>.filled(2, 0.0));
+
+      if (runOnIsolate && _isolateInterpreter != null) {
+        await _isolateInterpreter!.run(input, output);
+      } else {
+        _interpreter!.run(input, output);
+      }
+      return output[0];
+    }
+  }
+
   /// Run passive liveness detection directly on a raw camera buffer ([LivenessImageBuffer]).
-  ///
-  /// The [boundingBox] should be in raw buffer coordinate space (as returned
-  /// by ML Kit face detection).
-  /// The [rotation] is the camera rotation in degrees CW needed to make the buffer upright.
   Future<LivenessResult> detectLivenessFromBuffer(
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
@@ -87,8 +265,14 @@ class PassiveLivenessDetector {
     bool? isRotatedBoundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    double emaAlpha = defaultEmaAlpha,
+    bool? useIsolate,
+    bool? useNchw,
+    int? targetSize,
+    int realLogitIndex = 0,
+    bool enableContrastStretch = false,
   }) async {
-    if (!isInitialized || _interpreter == null) {
+    if (!isInitialized) {
       throw StateError(
         'PassiveLivenessDetector is not initialized. Call initialize() first.',
       );
@@ -96,59 +280,113 @@ class PassiveLivenessDetector {
 
     final stopwatch = Stopwatch()..start();
 
-    // 1. Preprocess crop to 128x128 Float32 NHWC tensor [1, 128, 128, 3]
+    final effectiveUseNchw = useNchw ?? _isNativeNchw;
+    final effectiveTargetSize = targetSize ?? _modelTargetSize;
+
+    _ensureInputShapeAllocated(
+      targetSize: effectiveTargetSize,
+      useNchw: effectiveUseNchw,
+    );
+
     final tensorData = ImagePreprocessor.preprocessBufferToTensor(
       buffer,
       boundingBox: boundingBox,
       rotation: rotation,
       isRotatedBoundingBox: isRotatedBoundingBox,
       expansionFactor: expansionFactor,
+      targetSize: effectiveTargetSize,
+      useNchw: effectiveUseNchw,
+      enableContrastStretch: enableContrastStretch,
     );
 
-    final input = tensorData.reshape([
-      1,
-      ImagePreprocessor.defaultModelSize,
-      ImagePreprocessor.defaultModelSize,
-      3,
-    ]);
+    _logTensorStats(tensorData);
 
-    final output = List.generate(1, (_) => List<double>.filled(2, 0.0));
-
-    if (_isolateInterpreter != null) {
-      await _isolateInterpreter!.run(input, output);
-    } else {
-      _interpreter!.run(input, output);
-    }
+    final runOnIsolate = useIsolate ?? (_isolateInterpreter != null);
+    final logits = await _runInference(
+      tensorData: tensorData,
+      effectiveUseNchw: effectiveUseNchw,
+      effectiveTargetSize: effectiveTargetSize,
+      runOnIsolate: runOnIsolate,
+    );
     stopwatch.stop();
 
-    final logits = output[0];
+    final realIdx = realLogitIndex.clamp(0, 1);
+    final spoofIdx = 1 - realIdx;
 
-    return LivenessResult.fromLogits(
-      realLogit: logits[0],
-      spoofLogit: logits[1],
+    final realLogit = logits[realIdx];
+    final spoofLogit = logits[spoofIdx];
+
+    final rawResult = LivenessResult.fromLogits(
+      realLogit: realLogit,
+      spoofLogit: spoofLogit,
+      threshold: threshold,
+      inferenceTime: stopwatch.elapsed,
+    );
+
+    // Asymmetric EMA Calculation:
+    // 1. Calculate current frame real probability using numerically stable Softmax:
+    final currentRealProb = 1.0 / (1.0 + math.exp(spoofLogit - realLogit));
+
+    // 2. Select Asymmetric Alpha:
+    // If currentRealProb < _emaRealScore (score dropping due to glare), use alpha = 0.1.
+    // Otherwise (score rising/stable), use alpha = 0.4.
+    final double alpha;
+    if (_emaRealScore == null) {
+      _emaRealScore = currentRealProb;
+      alpha = 1.0;
+    } else {
+      alpha = (currentRealProb < _emaRealScore!) ? 0.1 : 0.4;
+      _emaRealScore =
+          (currentRealProb * alpha) + (_emaRealScore! * (1.0 - alpha));
+    }
+
+    // 3. Clamp EMA & 4. Re-derive logit difference:
+    final safeEma = _emaRealScore!.clamp(1e-7, 1.0 - 1e-7);
+    final spoofScoreEma = 1.0 - safeEma;
+    final smoothedDiff = math.log(safeEma / (1.0 - safeEma));
+
+    return LivenessResult(
+      isReal: smoothedDiff >= threshold,
+      status: (smoothedDiff >= threshold)
+          ? LivenessStatus.real
+          : LivenessStatus.spoof,
+      realScore: safeEma,
+      spoofScore: spoofScoreEma,
+      realLogit: rawResult.realLogit,
+      spoofLogit: rawResult.spoofLogit,
+      logitDiff: smoothedDiff,
+      confidence: smoothedDiff.abs(),
       threshold: threshold,
       inferenceTime: stopwatch.elapsed,
     );
   }
 
-  /// Run passive liveness detection on an in-memory encoded image byte array
-  /// (e.g. JPEG / PNG bytes from camera `takePicture()` or `ImagePicker`).
-  ///
-  /// Uses Flutter's built-in C++ Skia engine codecs (`dart:ui`) with zero external dependencies.
-  /// The [boundingBox] should be in pixel coordinates of the static image `[0..width, 0..height]`.
+  /// Run passive liveness detection on image byte array (e.g. JPEG/PNG bytes).
   Future<LivenessResult> detectLivenessFromImageBytes(
     Uint8List imageBytes, {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    bool? useNchw,
+    int? targetSize,
+    int realLogitIndex = 0,
+    bool enableContrastStretch = false,
   }) async {
-    if (!isInitialized || _interpreter == null) {
+    if (!isInitialized) {
       throw StateError(
         'PassiveLivenessDetector is not initialized. Call initialize() first.',
       );
     }
 
     final stopwatch = Stopwatch()..start();
+
+    final effectiveUseNchw = useNchw ?? _isNativeNchw;
+    final effectiveTargetSize = targetSize ?? _modelTargetSize;
+
+    _ensureInputShapeAllocated(
+      targetSize: effectiveTargetSize,
+      useNchw: effectiveUseNchw,
+    );
 
     final ui.Codec codec = await ui.instantiateImageCodec(imageBytes);
     final ui.FrameInfo frameInfo = await codec.getNextFrame();
@@ -176,43 +414,42 @@ class PassiveLivenessDetector {
       height,
       boundingBox: boundingBox,
       expansionFactor: expansionFactor,
+      targetSize: effectiveTargetSize,
+      useNchw: effectiveUseNchw,
+      enableContrastStretch: enableContrastStretch,
     );
 
-    final input = tensorData.reshape([
-      1,
-      ImagePreprocessor.defaultModelSize,
-      ImagePreprocessor.defaultModelSize,
-      3,
-    ]);
+    _logTensorStats(tensorData);
 
-    final output = List.generate(1, (_) => List<double>.filled(2, 0.0));
-
-    if (_isolateInterpreter != null) {
-      await _isolateInterpreter!.run(input, output);
-    } else {
-      _interpreter!.run(input, output);
-    }
+    final logits = await _runInference(
+      tensorData: tensorData,
+      effectiveUseNchw: effectiveUseNchw,
+      effectiveTargetSize: effectiveTargetSize,
+      runOnIsolate: false,
+    );
     stopwatch.stop();
 
-    final logits = output[0];
+    final realIdx = realLogitIndex.clamp(0, 1);
+    final spoofIdx = 1 - realIdx;
 
     return LivenessResult.fromLogits(
-      realLogit: logits[0],
-      spoofLogit: logits[1],
+      realLogit: logits[realIdx],
+      spoofLogit: logits[spoofIdx],
       threshold: threshold,
       inferenceTime: stopwatch.elapsed,
     );
   }
 
-  /// Run passive liveness detection on a static image file
-  /// (e.g. `XFile.path` from camera package or `File` from `image_picker`).
-  ///
-  /// The [boundingBox] should be in pixel coordinates of the static image `[0..width, 0..height]`.
+  /// Run passive liveness detection on a static image file.
   Future<LivenessResult> detectLivenessFromImageFile(
     File file, {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    bool? useNchw,
+    int? targetSize,
+    int realLogitIndex = 0,
+    bool enableContrastStretch = false,
   }) async {
     final bytes = await file.readAsBytes();
     return detectLivenessFromImageBytes(
@@ -220,15 +457,22 @@ class PassiveLivenessDetector {
       boundingBox: boundingBox,
       threshold: threshold,
       expansionFactor: expansionFactor,
+      useNchw: useNchw,
+      targetSize: targetSize,
+      realLogitIndex: realLogitIndex,
+      enableContrastStretch: enableContrastStretch,
     );
   }
 
-  /// Close LiteRT interpreter.
+  /// Close LiteRT models and clear EMA tracker.
   void dispose() {
+    resetEma();
     _isolateInterpreter?.close();
     _isolateInterpreter = null;
     _interpreter?.close();
     _interpreter = null;
+    _compiledModel?.close();
+    _compiledModel = null;
     _isInitialized = false;
   }
 }

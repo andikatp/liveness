@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'models/face_bounding_box.dart';
 import 'models/liveness_image_buffer.dart';
@@ -16,6 +17,12 @@ class LivenessFrameProcessor {
   bool _isProcessing = false;
   DateTime? _lastProcessedTime;
 
+  /// Previous frame bounding box for motion stability check.
+  ui.Rect? _lastFaceBox;
+
+  /// Cached previous inference result returned when frame is unstable due to motion.
+  LivenessResult? _lastResult;
+
   /// Creates a [LivenessFrameProcessor] with the given [detector] and [throttleInterval].
   LivenessFrameProcessor({
     required this.detector,
@@ -25,15 +32,50 @@ class LivenessFrameProcessor {
   /// Whether a frame is currently being processed.
   bool get isProcessing => _isProcessing;
 
+  /// Checks whether the face bounding box is stable relative to the previous frame.
+  ///
+  /// Returns `false` if motion deltas exceed 5% (0.05), indicating motion blur
+  /// or camera AE/AF adjustment.
+  bool _isFaceStable(ui.Rect currentBox, int frameWidth, int frameHeight) {
+    if (_lastFaceBox == null) {
+      _lastFaceBox = currentBox;
+      return false; // Need a baseline frame
+    }
+
+    final currCx = currentBox.center.dx;
+    final currCy = currentBox.center.dy;
+    final lastCx = _lastFaceBox!.center.dx;
+    final lastCy = _lastFaceBox!.center.dy;
+
+    final dx = (currCx - lastCx).abs() / frameWidth;
+    final dy = (currCy - lastCy).abs() / frameHeight;
+
+    final lastWidth = _lastFaceBox!.width > 0 ? _lastFaceBox!.width : 1.0;
+    final lastHeight = _lastFaceBox!.height > 0 ? _lastFaceBox!.height : 1.0;
+
+    final dw = (currentBox.width - _lastFaceBox!.width).abs() / lastWidth;
+    final dh = (currentBox.height - _lastFaceBox!.height).abs() / lastHeight;
+
+    _lastFaceBox = currentBox;
+
+    if (dx > 0.05 || dy > 0.05 || dw > 0.05 || dh > 0.05) {
+      return false; // Motion detected, unstable
+    }
+
+    return true; // Face is still and stable
+  }
+
   /// Process a single frame from raw [LivenessImageBuffer].
   /// Returns `null` if the processor is busy or within throttle interval.
+  /// Bypasses inference and returns previous result / pending if face is in motion.
   Future<LivenessResult?> processBufferFrame(
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
     int rotation = 0,
     bool? isRotatedBoundingBox,
     double threshold = 0.0,
-    double expansionFactor = 1.5,
+    double expansionFactor = 2.7,
+    bool enableContrastStretch = false,
   }) async {
     final now = DateTime.now();
 
@@ -50,6 +92,19 @@ class LivenessFrameProcessor {
     _lastProcessedTime = now;
 
     try {
+      if (boundingBox != null) {
+        final rect = ui.Rect.fromLTWH(
+          boundingBox.x,
+          boundingBox.y,
+          boundingBox.width,
+          boundingBox.height,
+        );
+        final isStable = _isFaceStable(rect, buffer.width, buffer.height);
+        if (!isStable) {
+          return _lastResult ?? LivenessResult.pending();
+        }
+      }
+
       final result = await detector.detectLivenessFromBuffer(
         buffer,
         boundingBox: boundingBox,
@@ -57,16 +112,21 @@ class LivenessFrameProcessor {
         isRotatedBoundingBox: isRotatedBoundingBox,
         threshold: threshold,
         expansionFactor: expansionFactor,
+        enableContrastStretch: enableContrastStretch,
       );
+      _lastResult = result;
       return result;
     } finally {
       _isProcessing = false;
     }
   }
 
-  /// Reset internal frame processor state.
+  /// Reset internal frame processor state and clear detector EMA tracker.
   void reset() {
     _isProcessing = false;
     _lastProcessedTime = null;
+    _lastFaceBox = null;
+    _lastResult = null;
+    detector.resetEma();
   }
 }
