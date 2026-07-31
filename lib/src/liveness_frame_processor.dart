@@ -5,6 +5,7 @@ import 'models/face_bounding_box.dart';
 import 'models/liveness_image_buffer.dart';
 import 'models/liveness_result.dart';
 import 'passive_liveness_detector.dart';
+import 'utils/liveness_logger.dart';
 
 /// Helper to handle live camera frame streaming without UI lag or frame dropping.
 class LivenessFrameProcessor {
@@ -58,11 +59,17 @@ class LivenessFrameProcessor {
 
     _lastFaceBox = currentBox;
 
-    if (dx > 0.05 || dy > 0.05 || dw > 0.05 || dh > 0.05) {
-      return false; // Motion detected, unstable
-    }
+    final isStable = !(dx > 0.05 || dy > 0.05 || dw > 0.05 || dh > 0.05);
 
-    return true; // Face is still and stable
+    LivenessLogger.logMotionStability(
+      isStable: isStable,
+      dx: dx,
+      dy: dy,
+      dw: dw,
+      dh: dh,
+    );
+
+    return isStable;
   }
 
   /// Process a single frame from raw [LivenessImageBuffer].

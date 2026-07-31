@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import '../models/face_bounding_box.dart';
 import '../models/liveness_image_buffer.dart';
+import 'liveness_logger.dart';
 
 /// Preprocessing utilities for passive face anti-spoofing input.
 class ImagePreprocessor {
@@ -33,7 +34,7 @@ class ImagePreprocessor {
     int targetSize = defaultModelSize,
     bool useNchw = true,
     bool isBgr = false,
-    bool enableContrastStretch = false,
+    bool enableContrastStretch = true,
   }) {
     final rawW = buffer.width;
     final rawH = buffer.height;
@@ -72,6 +73,18 @@ class ImagePreprocessor {
 
     final cropLeft = effectiveBbox.centerX - newW / 2.0;
     final cropTop = effectiveBbox.centerY - newH / 2.0;
+
+    LivenessLogger.logCropStats(
+      rawWidth: rawW,
+      rawHeight: rawH,
+      rotation: normRotation,
+      boundingBox: boundingBox,
+      expansionFactor: expansionFactor,
+      cropLeft: cropLeft,
+      cropTop: cropTop,
+      cropWidth: newW,
+      cropHeight: newH,
+    );
 
     final tensor = Float32List(1 * targetSize * targetSize * 3);
     final hw = targetSize * targetSize;
@@ -278,6 +291,18 @@ class ImagePreprocessor {
 
     final cropLeft = faceBbox.centerX - newW / 2.0;
     final cropTop = faceBbox.centerY - newH / 2.0;
+
+    LivenessLogger.logCropStats(
+      rawWidth: rawW,
+      rawHeight: rawH,
+      rotation: 0,
+      boundingBox: boundingBox,
+      expansionFactor: expansionFactor,
+      cropLeft: cropLeft,
+      cropTop: cropTop,
+      cropWidth: newW,
+      cropHeight: newH,
+    );
 
     final tensor = Float32List(1 * targetSize * targetSize * 3);
     final hw = targetSize * targetSize;

@@ -10,6 +10,7 @@ import 'models/face_bounding_box.dart';
 import 'models/liveness_image_buffer.dart';
 import 'models/liveness_result.dart';
 import 'utils/image_preprocessor.dart';
+import 'utils/liveness_logger.dart';
 
 /// Core passive liveness detector engine using MiniFAS LiteRT (TFLite) model.
 ///
@@ -102,11 +103,6 @@ class PassiveLivenessDetector {
       try {
         final inputTensor = _interpreter!.getInputTensor(0);
         _modelInputShape = List<int>.from(inputTensor.shape);
-        // Diagnostics Log #1: Log Model's Expected Shape
-        // ignore: avoid_print
-        print(
-          '[PASSIVE_LIVENESS] TFLite model native expected input shape: $_modelInputShape, type: ${inputTensor.type}',
-        );
 
         if (_modelInputShape != null && _modelInputShape!.length == 4) {
           if (_modelInputShape![1] == 3) {
@@ -117,9 +113,17 @@ class PassiveLivenessDetector {
             _modelTargetSize = _modelInputShape![1];
           }
         }
+
+        LivenessLogger.logModelInit(
+          inputShape: _modelInputShape,
+          tensorType: inputTensor.type.toString(),
+          isNativeNchw: _isNativeNchw,
+          targetSize: _modelTargetSize,
+          isCompiledModel: _compiledModel != null,
+          isIsolateInterpreter: _isolateInterpreter != null,
+        );
       } catch (e) {
-        // ignore: avoid_print
-        print('[PASSIVE_LIVENESS] Failed to inspect model input shape: $e');
+        LivenessLogger.log('Failed to inspect model input shape: $e');
         _modelInputShape = null;
       }
     }
@@ -162,8 +166,7 @@ class PassiveLivenessDetector {
           }
         }
       } catch (e) {
-        // ignore: avoid_print
-        print('[PASSIVE_LIVENESS] CompiledModel fallback to Interpreter: $e');
+        LivenessLogger.log('CompiledModel fallback to Interpreter: $e');
         _compiledModel = null;
       }
     }
@@ -208,22 +211,9 @@ class PassiveLivenessDetector {
   }
 
   void _logTensorStats(Float32List tensorData) {
-    if (tensorData.isEmpty) return;
-    double minVal = tensorData[0];
-    double maxVal = tensorData[0];
-    double sumVal = 0.0;
-    for (int i = 0; i < tensorData.length; i++) {
-      final v = tensorData[i];
-      if (v < minVal) minVal = v;
-      if (v > maxVal) maxVal = v;
-      sumVal += v;
-    }
-    final double meanVal = sumVal / tensorData.length;
-    final inputShape = _interpreter?.getInputTensor(0).shape;
-    // Diagnostics Log #1 & #2
-    // ignore: avoid_print
-    print(
-      '[PASSIVE_LIVENESS] Interpreter Input Shape: $inputShape | Tensor stats -> min: ${minVal.toStringAsFixed(4)}, max: ${maxVal.toStringAsFixed(4)}, mean: ${meanVal.toStringAsFixed(4)}, len: ${tensorData.length}',
+    LivenessLogger.logTensorStats(
+      tensorData,
+      inputShape: _interpreter?.getInputTensor(0).shape,
     );
   }
 
@@ -345,7 +335,7 @@ class PassiveLivenessDetector {
     final spoofScoreEma = 1.0 - safeEma;
     final smoothedDiff = math.log(safeEma / (1.0 - safeEma));
 
-    return LivenessResult(
+    final result = LivenessResult(
       isReal: smoothedDiff >= threshold,
       status: (smoothedDiff >= threshold)
           ? LivenessStatus.real
@@ -359,6 +349,20 @@ class PassiveLivenessDetector {
       threshold: threshold,
       inferenceTime: stopwatch.elapsed,
     );
+
+    LivenessLogger.logInferenceResult(
+      realLogit: realLogit,
+      spoofLogit: spoofLogit,
+      logitDiff: smoothedDiff,
+      currentRealProb: currentRealProb,
+      emaRealScore: safeEma,
+      isReal: result.isReal,
+      status: result.status,
+      threshold: threshold,
+      inferenceTime: stopwatch.elapsed,
+    );
+
+    return result;
   }
 
   /// Run passive liveness detection on image byte array (e.g. JPEG/PNG bytes).
@@ -432,12 +436,26 @@ class PassiveLivenessDetector {
     final realIdx = realLogitIndex.clamp(0, 1);
     final spoofIdx = 1 - realIdx;
 
-    return LivenessResult.fromLogits(
+    final result = LivenessResult.fromLogits(
       realLogit: logits[realIdx],
       spoofLogit: logits[spoofIdx],
       threshold: threshold,
       inferenceTime: stopwatch.elapsed,
     );
+
+    LivenessLogger.logInferenceResult(
+      realLogit: result.realLogit,
+      spoofLogit: result.spoofLogit,
+      logitDiff: result.logitDiff,
+      currentRealProb: result.realScore,
+      emaRealScore: null,
+      isReal: result.isReal,
+      status: result.status,
+      threshold: threshold,
+      inferenceTime: stopwatch.elapsed,
+    );
+
+    return result;
   }
 
   /// Run passive liveness detection on a static image file.

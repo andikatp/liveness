@@ -7,3 +7,4 @@ export 'src/models/liveness_image_buffer.dart';
 export 'src/models/liveness_result.dart';
 export 'src/passive_liveness_detector.dart';
 export 'src/utils/image_preprocessor.dart';
+export 'src/utils/liveness_logger.dart';
