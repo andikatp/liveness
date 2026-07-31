@@ -41,6 +41,18 @@ class LivenessResult {
   /// Time taken to execute preprocessing and model inference.
   final Duration inferenceTime;
 
+  /// Instant single-frame softmax probability of being real (before EMA smoothing).
+  final double rawRealScore;
+
+  /// Instant single-frame softmax probability of being spoof (before EMA smoothing).
+  final double rawSpoofScore;
+
+  /// Instant single-frame logit difference (`realLogit - spoofLogit`).
+  final double rawLogitDiff;
+
+  /// Whether the instant single-frame model output is real (`rawLogitDiff >= threshold`).
+  final bool rawIsReal;
+
   /// Creates a [LivenessResult] containing complete classification metrics.
   const LivenessResult({
     required this.isReal,
@@ -53,12 +65,17 @@ class LivenessResult {
     required this.confidence,
     required this.threshold,
     required this.inferenceTime,
-  });
+    double? rawRealScore,
+    double? rawSpoofScore,
+    double? rawLogitDiff,
+    bool? rawIsReal,
+  }) : rawRealScore = rawRealScore ?? realScore,
+       rawSpoofScore = rawSpoofScore ?? spoofScore,
+       rawLogitDiff = rawLogitDiff ?? logitDiff,
+       rawIsReal = rawIsReal ?? isReal;
 
   /// Factory constructor for pending/unstable frames.
-  factory LivenessResult.pending({
-    double threshold = 0.0,
-  }) {
+  factory LivenessResult.pending({double threshold = 0.0}) {
     return LivenessResult(
       isReal: false,
       status: LivenessStatus.spoof,
@@ -109,17 +126,17 @@ class LivenessResult {
 
   /// Convert result to a JSON map representation.
   Map<String, dynamic> toJson() => {
-        'isReal': isReal,
-        'status': status.name,
-        'realScore': realScore,
-        'spoofScore': spoofScore,
-        'realLogit': realLogit,
-        'spoofLogit': spoofLogit,
-        'logitDiff': logitDiff,
-        'confidence': confidence,
-        'threshold': threshold,
-        'inferenceTimeMs': inferenceTime.inMilliseconds,
-      };
+    'isReal': isReal,
+    'status': status.name,
+    'realScore': realScore,
+    'spoofScore': spoofScore,
+    'realLogit': realLogit,
+    'spoofLogit': spoofLogit,
+    'logitDiff': logitDiff,
+    'confidence': confidence,
+    'threshold': threshold,
+    'inferenceTimeMs': inferenceTime.inMilliseconds,
+  };
 
   @override
   String toString() {
@@ -129,4 +146,3 @@ class LivenessResult {
 
 /// Alias for [LivenessResult] to prevent class name collisions in host applications.
 typedef PassiveLivenessResult = LivenessResult;
-

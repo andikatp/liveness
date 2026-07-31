@@ -81,8 +81,9 @@ class LivenessFrameProcessor {
     int rotation = 0,
     bool? isRotatedBoundingBox,
     double threshold = 0.0,
-    double expansionFactor = 2.7,
+    double expansionFactor = 1.5,
     bool enableContrastStretch = false,
+    bool isBgr = false,
   }) async {
     final now = DateTime.now();
 
@@ -120,6 +121,7 @@ class LivenessFrameProcessor {
         threshold: threshold,
         expansionFactor: expansionFactor,
         enableContrastStretch: enableContrastStretch,
+        isBgr: isBgr,
       );
       _lastResult = result;
       return result;

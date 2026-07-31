@@ -238,6 +238,10 @@ class PassiveLivenessDetector {
 
       final output = List.generate(1, (_) => List<double>.filled(2, 0.0));
 
+      if (!_isInitialized || _interpreter == null) {
+        return output[0];
+      }
+
       if (runOnIsolate && _isolateInterpreter != null) {
         await _isolateInterpreter!.run(input, output);
       } else {
@@ -261,6 +265,7 @@ class PassiveLivenessDetector {
     int? targetSize,
     int realLogitIndex = 0,
     bool enableContrastStretch = false,
+    bool isBgr = false,
   }) async {
     if (!isInitialized) {
       throw StateError(
@@ -286,6 +291,7 @@ class PassiveLivenessDetector {
       expansionFactor: expansionFactor,
       targetSize: effectiveTargetSize,
       useNchw: effectiveUseNchw,
+      isBgr: isBgr,
       enableContrastStretch: enableContrastStretch,
     );
 
@@ -313,21 +319,21 @@ class PassiveLivenessDetector {
       inferenceTime: stopwatch.elapsed,
     );
 
-    // Asymmetric EMA Calculation:
+    // Balanced EMA Calculation:
     // 1. Calculate current frame real probability using numerically stable Softmax:
     final currentRealProb = 1.0 / (1.0 + math.exp(spoofLogit - realLogit));
 
-    // 2. Select Asymmetric Alpha:
-    // If currentRealProb < _emaRealScore (score dropping due to glare), use alpha = 0.1.
-    // Otherwise (score rising/stable), use alpha = 0.4.
-    final double alpha;
+    // 2. Select EMA Alpha:
+    // Uses balanced alpha = 0.4 (or passed emaAlpha) so EMA smooths single-frame noise
+    // while recovering to REAL within 2 consecutive high-confidence frames.
+    final double effectiveAlpha;
     if (_emaRealScore == null) {
       _emaRealScore = currentRealProb;
-      alpha = 1.0;
+      effectiveAlpha = 1.0;
     } else {
-      alpha = (currentRealProb < _emaRealScore!) ? 0.1 : 0.4;
+      effectiveAlpha = emaAlpha;
       _emaRealScore =
-          (currentRealProb * alpha) + (_emaRealScore! * (1.0 - alpha));
+          (currentRealProb * effectiveAlpha) + (_emaRealScore! * (1.0 - effectiveAlpha));
     }
 
     // 3. Clamp EMA & 4. Re-derive logit difference:
@@ -348,6 +354,10 @@ class PassiveLivenessDetector {
       confidence: smoothedDiff.abs(),
       threshold: threshold,
       inferenceTime: stopwatch.elapsed,
+      rawRealScore: rawResult.realScore,
+      rawSpoofScore: rawResult.spoofScore,
+      rawLogitDiff: rawResult.logitDiff,
+      rawIsReal: rawResult.isReal,
     );
 
     LivenessLogger.logInferenceResult(
@@ -375,6 +385,7 @@ class PassiveLivenessDetector {
     int? targetSize,
     int realLogitIndex = 0,
     bool enableContrastStretch = false,
+    bool isBgr = false,
   }) async {
     if (!isInitialized) {
       throw StateError(
@@ -420,6 +431,7 @@ class PassiveLivenessDetector {
       expansionFactor: expansionFactor,
       targetSize: effectiveTargetSize,
       useNchw: effectiveUseNchw,
+      isBgr: isBgr,
       enableContrastStretch: enableContrastStretch,
     );
 
@@ -468,6 +480,7 @@ class PassiveLivenessDetector {
     int? targetSize,
     int realLogitIndex = 0,
     bool enableContrastStretch = false,
+    bool isBgr = false,
   }) async {
     final bytes = await file.readAsBytes();
     return detectLivenessFromImageBytes(
@@ -479,6 +492,7 @@ class PassiveLivenessDetector {
       targetSize: targetSize,
       realLogitIndex: realLogitIndex,
       enableContrastStretch: enableContrastStretch,
+      isBgr: isBgr,
     );
   }
 

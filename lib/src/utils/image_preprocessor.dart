@@ -14,8 +14,25 @@ class ImagePreprocessor {
   /// Default input size expected by MiniFAS model (128x128).
   static const int defaultModelSize = 128;
 
-  /// Default bounding box expansion factor recommended by MiniFAS (2.7x).
-  static const double defaultExpansionFactor = 2.7;
+  /// Default bounding box expansion factor recommended by MiniFAS (1.5x for this custom model).
+  static const double defaultExpansionFactor = 1.5;
+
+  /// Reflect101 coordinate mapping (`g fedcba|abcdefgh|gfedcba`) for smooth border padding.
+  ///
+  /// Mirrors coordinates past image boundaries `[0, maxVal]` to avoid artificial solid
+  /// constant-color edge bands.
+  static int _reflect101(int p, int maxVal) {
+    if (maxVal <= 0) return 0;
+    int val = p;
+    while (val < 0 || val > maxVal) {
+      if (val < 0) {
+        val = -val;
+      } else if (val > maxVal) {
+        val = 2 * maxVal - val;
+      }
+    }
+    return val;
+  }
 
   /// Preprocesses a raw camera [LivenessImageBuffer] into a Float32 tensor.
   ///
@@ -60,19 +77,21 @@ class ImagePreprocessor {
         ? faceBbox.toRawBufferSpace(rawW, rawH, normRotation)
         : faceBbox;
 
-    // Python crop logic replication:
-    // scale = min((src_h - 1) / box_h, (src_w - 1) / box_w, expansionFactor)
+    // Strictly 1:1 square crop calculation (baseSide = max(w, h)) preserving trained 37.0% facial scale:
     final boxW = math.max(1.0, effectiveBbox.width);
     final boxH = math.max(1.0, effectiveBbox.height);
-    final scale = math.min(
-      math.min((rawH - 1) / boxH, (rawW - 1) / boxW),
-      expansionFactor,
-    );
-    final newW = boxW * scale;
-    final newH = boxH * scale;
+    final baseSide = math.max(boxW, boxH);
+    final double cropSize = (baseSide * expansionFactor).toInt().toDouble();
 
-    final cropLeft = effectiveBbox.centerX - newW / 2.0;
-    final cropTop = effectiveBbox.centerY - newH / 2.0;
+    final double newW = cropSize;
+    final double newH = cropSize;
+
+    final double cropLeft = (effectiveBbox.centerX - cropSize / 2.0)
+        .toInt()
+        .toDouble();
+    final double cropTop = (effectiveBbox.centerY - cropSize / 2.0)
+        .toInt()
+        .toDouble();
 
     LivenessLogger.logCropStats(
       rawWidth: rawW,
@@ -106,132 +125,193 @@ class ImagePreprocessor {
         ? (buffer.planes[1].bytesPerPixel ?? 1)
         : 1;
 
+    final double step = cropSize / targetSize;
+
     for (int y = 0; y < targetSize; y++) {
-      final double normUY = (y + 0.5) / targetSize;
+      final double cy1 = y * step;
+      final double cy2 = (y + 1) * step;
 
       for (int x = 0; x < targetSize; x++) {
-        final double normUX = (x + 0.5) / targetSize;
+        final double cx1 = x * step;
+        final double cx2 = (x + 1) * step;
 
-        // Map normalized upright coordinates (normUX, normUY) back to
-        // raw buffer relative crop coordinates (relX, relY) based on rotation.
-        double relX, relY;
+        double rawX1, rawX2, rawY1, rawY2;
         switch (normRotation) {
           case 90:
-            relX = normUY * newW;
-            relY = (1.0 - normUX) * newH;
+            rawX1 = cropLeft + cy1;
+            rawX2 = cropLeft + cy2;
+            rawY1 = cropTop + newH - cx2;
+            rawY2 = cropTop + newH - cx1;
             break;
           case 180:
-            relX = (1.0 - normUX) * newW;
-            relY = (1.0 - normUY) * newH;
+            rawX1 = cropLeft + newW - cx2;
+            rawX2 = cropLeft + newW - cx1;
+            rawY1 = cropTop + newH - cy2;
+            rawY2 = cropTop + newH - cy1;
             break;
           case 270:
-            relX = (1.0 - normUY) * newW;
-            relY = normUX * newH;
+            rawX1 = cropLeft + newW - cy2;
+            rawX2 = cropLeft + newW - cy1;
+            rawY1 = cropTop + cx1;
+            rawY2 = cropTop + cx2;
             break;
           case 0:
           default:
-            relX = normUX * newW;
-            relY = normUY * newH;
+            rawX1 = cropLeft + cx1;
+            rawX2 = cropLeft + cx2;
+            rawY1 = cropTop + cy1;
+            rawY2 = cropTop + cy2;
             break;
         }
 
-        final double rawX = cropLeft + relX;
-        final double rawY = cropTop + relY;
+        double sumR = 0.0, sumG = 0.0, sumB = 0.0;
+        double sumY = 0.0, sumU = 0.0, sumV = 0.0;
+        double totalWeight = 0.0;
 
-        // Edge Pixel Replication: Clamp coordinates to raw image boundaries
-        final int srcX = rawX.round().clamp(0, rawW - 1);
-        final int srcY = rawY.round().clamp(0, rawH - 1);
+        final int startY = rawY1.floor();
+        final int endY = rawY2.ceil();
+        final int startX = rawX1.floor();
+        final int endX = rawX2.ceil();
 
-        int r = 0, g = 0, b = 0;
+        for (int ry = startY; ry < endY; ry++) {
+          final double ryD = ry.toDouble();
+          final double ryp1 = ryD + 1.0;
+          final double yMin = ryp1 < rawY2 ? ryp1 : rawY2;
+          final double yMax = ryD > rawY1 ? ryD : rawY1;
+          final double yOverlap = yMin - yMax;
+          if (yOverlap <= 0) continue;
 
-        if (isBgra) {
-          final offset = srcY * p0Stride + (srcX << 2);
-          if (offset + 2 < plane0.length) {
-            b = plane0[offset];
-            g = plane0[offset + 1];
-            r = plane0[offset + 2];
-          }
-        } else {
-          // YUV420 / NV21
-          final yIdx = srcY * p0Stride + srcX;
-          final yVal = yIdx < plane0.length ? plane0[yIdx] : 0;
+          final int srcY = _reflect101(ry, rawH - 1);
+          final int yIdxBase = srcY * p0Stride;
+          final int uvRow = srcY >> 1;
+          final int uvBase = uvRow * uvStride;
 
-          int uVal = 128;
-          int vVal = 128;
+          for (int rx = startX; rx < endX; rx++) {
+            final double rxD = rx.toDouble();
+            final double rxp1 = rxD + 1.0;
+            final double xMin = rxp1 < rawX2 ? rxp1 : rawX2;
+            final double xMax = rxD > rawX1 ? rxD : rawX1;
+            final double xOverlap = xMin - xMax;
+            final double w = xOverlap * yOverlap;
+            if (w <= 0) continue;
 
-          if (plane1 != null && plane2 != null) {
-            final uvRow = srcY >> 1;
-            final uvCol = srcX >> 1;
-            final uvOff = uvRow * uvStride + uvCol * uvPixelStride;
+            final int srcX = _reflect101(rx, rawW - 1);
 
-            if (uvPixelStride == 2) {
-              if (uvOff + 1 < plane1.length) {
-                if (buffer.format == LivenessImageFormat.nv21) {
-                  vVal = plane1[uvOff];
-                  uVal = plane1[uvOff + 1];
-                } else {
-                  uVal = plane1[uvOff];
-                  vVal = plane1[uvOff + 1];
-                }
-              } else if (uvOff < plane1.length) {
-                uVal = plane1[uvOff];
-                vVal = uvOff < plane2.length ? plane2[uvOff] : 128;
+            if (isBgra) {
+              int r = 0, g = 0, b = 0;
+              final offset = yIdxBase + (srcX << 2);
+              if (offset + 2 < plane0.length) {
+                b = plane0[offset];
+                g = plane0[offset + 1];
+                r = plane0[offset + 2];
               }
+              sumR += r * w;
+              sumG += g * w;
+              sumB += b * w;
             } else {
-              if (uvOff < plane1.length && uvOff < plane2.length) {
-                if (buffer.format == LivenessImageFormat.nv21) {
-                  vVal = plane1[uvOff];
-                  uVal = plane2[uvOff];
+              // YUV420 / NV21
+              final yIdx = yIdxBase + srcX;
+              final yVal = yIdx < plane0.length ? plane0[yIdx] : 0;
+
+              int uVal = 128;
+              int vVal = 128;
+
+              if (plane1 != null && plane2 != null) {
+                final uvCol = srcX >> 1;
+                final uvOff = uvBase + uvCol * uvPixelStride;
+
+                if (uvPixelStride == 2) {
+                  if (uvOff + 1 < plane1.length) {
+                    if (buffer.format == LivenessImageFormat.nv21) {
+                      vVal = plane1[uvOff];
+                      uVal = plane1[uvOff + 1];
+                    } else {
+                      uVal = plane1[uvOff];
+                      vVal = plane1[uvOff + 1];
+                    }
+                  } else if (uvOff < plane1.length) {
+                    uVal = plane1[uvOff];
+                    vVal = uvOff < plane2.length ? plane2[uvOff] : 128;
+                  }
                 } else {
-                  uVal = plane1[uvOff];
-                  vVal = plane2[uvOff];
+                  if (uvOff < plane1.length && uvOff < plane2.length) {
+                    if (buffer.format == LivenessImageFormat.nv21) {
+                      vVal = plane1[uvOff];
+                      uVal = plane2[uvOff];
+                    } else {
+                      uVal = plane1[uvOff];
+                      vVal = plane2[uvOff];
+                    }
+                  }
+                }
+              } else if (plane1 != null) {
+                // Dual plane (Y in plane0, interleaved UV/VU in plane1)
+                final uvCol = srcX >> 1;
+                final p1PixelStride = buffer.planes[1].bytesPerPixel ?? 2;
+                final uvOff = uvBase + uvCol * p1PixelStride;
+
+                if (uvOff + 1 < plane1.length) {
+                  if (buffer.format == LivenessImageFormat.nv21) {
+                    vVal = plane1[uvOff];
+                    uVal = plane1[uvOff + 1];
+                  } else {
+                    uVal = plane1[uvOff];
+                    vVal = plane1[uvOff + 1];
+                  }
+                }
+              } else if (plane0.length >= rawW * rawH * 3 ~/ 2) {
+                // Single plane packed NV21 / NV12 in plane0
+                final uvOff =
+                    p0Stride * rawH +
+                    (srcY >> 1) * p0Stride +
+                    ((srcX >> 1) << 1);
+                if (uvOff + 1 < plane0.length) {
+                  if (buffer.format == LivenessImageFormat.nv21) {
+                    vVal = plane0[uvOff];
+                    uVal = plane0[uvOff + 1];
+                  } else {
+                    uVal = plane0[uvOff];
+                    vVal = plane0[uvOff + 1];
+                  }
                 }
               }
-            }
-          } else if (plane1 != null) {
-            // Dual plane (Y in plane0, interleaved UV/VU in plane1)
-            final uvRow = srcY >> 1;
-            final uvCol = srcX >> 1;
-            final p1PixelStride = buffer.planes[1].bytesPerPixel ?? 2;
-            final uvOff = uvRow * uvStride + uvCol * p1PixelStride;
 
-            if (uvOff + 1 < plane1.length) {
-              if (buffer.format == LivenessImageFormat.nv21) {
-                vVal = plane1[uvOff];
-                uVal = plane1[uvOff + 1];
-              } else {
-                uVal = plane1[uvOff];
-                vVal = plane1[uvOff + 1];
-              }
+              sumY += yVal * w;
+              sumU += uVal * w;
+              sumV += vVal * w;
             }
-          } else if (plane0.length >= rawW * rawH * 3 ~/ 2) {
-            // Single plane packed NV21 / NV12 in plane0
-            final uvOff =
-                p0Stride * rawH + (srcY >> 1) * p0Stride + ((srcX >> 1) << 1);
-            if (uvOff + 1 < plane0.length) {
-              if (buffer.format == LivenessImageFormat.nv21) {
-                vVal = plane0[uvOff];
-                uVal = plane0[uvOff + 1];
-              } else {
-                uVal = plane0[uvOff];
-                vVal = plane0[uvOff + 1];
-              }
-            }
+            totalWeight += w;
           }
+        }
 
-          // BT.601 YUV→RGB conversion
-          final u = uVal - 128;
-          final v = vVal - 128;
-          r = (yVal + 1.402 * v).round().clamp(0, 255);
-          g = (yVal - 0.344136 * u - 0.714136 * v).round().clamp(0, 255);
-          b = (yVal + 1.772 * u).round().clamp(0, 255);
+        if (totalWeight > 0) {
+          if (isBgra) {
+            sumR /= totalWeight;
+            sumG /= totalWeight;
+            sumB /= totalWeight;
+          } else {
+            sumY /= totalWeight;
+            sumU /= totalWeight;
+            sumV /= totalWeight;
+
+            // BT.601 YUV→RGB conversion
+            final double u = sumU - 128.0;
+            final double v = sumV - 128.0;
+            final double r = sumY + 1.402 * v;
+            final double g = sumY - 0.344136 * u - 0.714136 * v;
+            final double b = sumY + 1.772 * u;
+
+            sumR = r.clamp(0.0, 255.0);
+            sumG = g.clamp(0.0, 255.0);
+            sumB = b.clamp(0.0, 255.0);
+          }
         }
 
         // Store normalized 0.0 - 1.0 Float32 values
         final spatialIdx = y * targetSize + x;
-        final c0Norm = (isBgr ? b : r) / 255.0;
-        final c1Norm = g / 255.0;
-        final c2Norm = (isBgr ? r : b) / 255.0;
+        final c0Norm = (isBgr ? sumB : sumR) / 255.0;
+        final c1Norm = sumG / 255.0;
+        final c2Norm = (isBgr ? sumR : sumB) / 255.0;
 
         if (useNchw) {
           tensor[spatialIdx] = c0Norm;
@@ -280,17 +360,21 @@ class ImagePreprocessor {
           height: rawH.toDouble(),
         );
 
+    // Strictly 1:1 square crop calculation (baseSide = max(w, h)) preserving trained 37.0% facial scale:
     final boxW = math.max(1.0, faceBbox.width);
     final boxH = math.max(1.0, faceBbox.height);
-    final scale = math.min(
-      math.min((rawH - 1) / boxH, (rawW - 1) / boxW),
-      expansionFactor,
-    );
-    final newW = boxW * scale;
-    final newH = boxH * scale;
+    final baseSide = math.max(boxW, boxH);
+    final double cropSize = (baseSide * expansionFactor).toInt().toDouble();
 
-    final cropLeft = faceBbox.centerX - newW / 2.0;
-    final cropTop = faceBbox.centerY - newH / 2.0;
+    final double newW = cropSize;
+    final double newH = cropSize;
+
+    final double cropLeft = (faceBbox.centerX - cropSize / 2.0)
+        .toInt()
+        .toDouble();
+    final double cropTop = (faceBbox.centerY - cropSize / 2.0)
+        .toInt()
+        .toDouble();
 
     LivenessLogger.logCropStats(
       rawWidth: rawW,
@@ -307,31 +391,64 @@ class ImagePreprocessor {
     final tensor = Float32List(1 * targetSize * targetSize * 3);
     final hw = targetSize * targetSize;
 
+    final double step = cropSize / targetSize;
+
     for (int y = 0; y < targetSize; y++) {
-      final double normUY = (y + 0.5) / targetSize;
-      final double rawY = cropTop + normUY * newH;
+      final double cy1 = y * step;
+      final double cy2 = (y + 1) * step;
 
       for (int x = 0; x < targetSize; x++) {
-        final double normUX = (x + 0.5) / targetSize;
-        final double rawX = cropLeft + normUX * newW;
+        final double cx1 = x * step;
+        final double cx2 = (x + 1) * step;
 
-        // Edge Pixel Replication: Clamp coordinates to raw image boundaries
-        final int srcX = rawX.round().clamp(0, rawW - 1);
-        final int srcY = rawY.round().clamp(0, rawH - 1);
+        final double rawX1 = cropLeft + cx1;
+        final double rawX2 = cropLeft + cx2;
+        final double rawY1 = cropTop + cy1;
+        final double rawY2 = cropTop + cy2;
 
-        double r = 0.0, g = 0.0, b = 0.0;
+        double sumR = 0.0, sumG = 0.0, sumB = 0.0;
+        double totalWeight = 0.0;
 
-        final offset = (srcY * rawW + srcX) * 4;
-        if (offset + 2 < rgbaBytes.length) {
-          r = rgbaBytes[offset].toDouble();
-          g = rgbaBytes[offset + 1].toDouble();
-          b = rgbaBytes[offset + 2].toDouble();
+        final int startY = rawY1.floor();
+        final int endY = rawY2.ceil();
+        final int startX = rawX1.floor();
+        final int endX = rawX2.ceil();
+
+        for (int ry = startY; ry < endY; ry++) {
+          final double yOverlap =
+              math.min(ry + 1.0, rawY2) - math.max(ry.toDouble(), rawY1);
+          if (yOverlap <= 0) continue;
+          final int srcY = _reflect101(ry, rawH - 1);
+          final int yBaseOffset = srcY * rawW;
+
+          for (int rx = startX; rx < endX; rx++) {
+            final double xOverlap =
+                math.min(rx + 1.0, rawX2) - math.max(rx.toDouble(), rawX1);
+            final double w = xOverlap * yOverlap;
+            if (w <= 0) continue;
+
+            final int srcX = _reflect101(rx, rawW - 1);
+
+            final offset = (yBaseOffset + srcX) << 2;
+            if (offset + 2 < rgbaBytes.length) {
+              sumR += rgbaBytes[offset] * w;
+              sumG += rgbaBytes[offset + 1] * w;
+              sumB += rgbaBytes[offset + 2] * w;
+            }
+            totalWeight += w;
+          }
+        }
+
+        if (totalWeight > 0) {
+          sumR /= totalWeight;
+          sumG /= totalWeight;
+          sumB /= totalWeight;
         }
 
         final spatialIdx = y * targetSize + x;
-        final c0Norm = (isBgr ? b : r) / 255.0;
-        final c1Norm = g / 255.0;
-        final c2Norm = (isBgr ? r : b) / 255.0;
+        final c0Norm = (isBgr ? sumB : sumR) / 255.0;
+        final c1Norm = sumG / 255.0;
+        final c2Norm = (isBgr ? sumR : sumB) / 255.0;
 
         if (useNchw) {
           tensor[spatialIdx] = c0Norm;

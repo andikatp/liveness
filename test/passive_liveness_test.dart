@@ -41,6 +41,30 @@ void main() {
         expect(result.realScore + result.spoofScore, closeTo(1.0, 1e-5));
       },
     );
+
+    test('Exposes raw single-frame metrics correctly alongside smoothed metrics', () {
+      final result = LivenessResult(
+        isReal: false,
+        status: LivenessStatus.spoof,
+        realScore: 0.4,
+        spoofScore: 0.6,
+        realLogit: 0.84,
+        spoofLogit: -0.84,
+        logitDiff: -0.4,
+        confidence: 0.4,
+        threshold: 0.0,
+        inferenceTime: Duration.zero,
+        rawRealScore: 0.844,
+        rawSpoofScore: 0.156,
+        rawLogitDiff: 1.68,
+        rawIsReal: true,
+      );
+
+      expect(result.isReal, isFalse);
+      expect(result.rawIsReal, isTrue);
+      expect(result.rawRealScore, equals(0.844));
+      expect(result.rawLogitDiff, equals(1.68));
+    });
   });
 
   group('FaceBoundingBox tests', () {
@@ -117,7 +141,7 @@ void main() {
       final tensor = ImagePreprocessor.preprocessBufferToTensor(
         buffer,
         boundingBox: bbox,
-        expansionFactor: 2.7,
+        expansionFactor: 2.0,
         targetSize: 10,
         useNchw: false,
       );
@@ -228,6 +252,148 @@ void main() {
       final length = await savedFile.length();
       expect(length, greaterThan(hw * 3));
       await savedFile.delete();
+    });
+
+    test('preprocessBufferToTensor maintains 1:1 square crop aspect ratio for rectangular bounding box', () {
+      final bytes = Uint8List(100 * 100 * 4);
+      final buffer = LivenessImageBuffer(
+        width: 100,
+        height: 100,
+        format: LivenessImageFormat.bgra8888,
+        planes: [
+          LivenessImagePlane(
+            bytes: bytes,
+            bytesPerRow: 100 * 4,
+            bytesPerPixel: 4,
+          ),
+        ],
+      );
+
+      // Rectangular bounding box (30x50)
+      const bbox = FaceBoundingBox(x: 10, y: 10, width: 30, height: 50);
+
+      // Should complete without error using square crop math (baseSide = max(30, 50) = 50)
+      final tensor = ImagePreprocessor.preprocessBufferToTensor(
+        buffer,
+        boundingBox: bbox,
+        expansionFactor: 2.0,
+        targetSize: 128,
+        useNchw: true,
+      );
+
+      expect(tensor.length, equals(49152));
+    });
+
+    test('preprocessBufferToTensor calculates true 2.0x square crop with reflect101 padding', () {
+      final bytes = Uint8List(100 * 100 * 4);
+      final buffer = LivenessImageBuffer(
+        width: 100,
+        height: 100,
+        format: LivenessImageFormat.bgra8888,
+        planes: [
+          LivenessImagePlane(
+            bytes: bytes,
+            bytesPerRow: 100 * 4,
+            bytesPerPixel: 4,
+          ),
+        ],
+      );
+
+      // Large face box (60x60) in 100x100 frame -> baseSide = 60.
+      // 2.0x expansion is 120.0. Unclamped crop extends outside boundaries and uses reflect101 padding.
+      const bbox = FaceBoundingBox(x: 20, y: 20, width: 60, height: 60);
+
+      final tensor = ImagePreprocessor.preprocessBufferToTensor(
+        buffer,
+        boundingBox: bbox,
+        expansionFactor: 2.0,
+        targetSize: 10,
+        useNchw: true,
+      );
+
+      expect(tensor.length, equals(300));
+    });
+
+    test('reflect101 border padding mirrors pixels for out-of-bounds crop coordinates', () {
+      // 10x10 BGRA image where column 0 = red (255, 0, 0), column 1 = green (0, 255, 0)
+      final bytes = Uint8List(10 * 10 * 4);
+      for (int y = 0; y < 10; y++) {
+        for (int x = 0; x < 10; x++) {
+          final idx = (y * 10 + x) * 4;
+          if (x == 0) {
+            bytes[idx] = 0; // B
+            bytes[idx + 1] = 0; // G
+            bytes[idx + 2] = 255; // R
+            bytes[idx + 3] = 255; // A
+          } else if (x == 1) {
+            bytes[idx] = 0; // B
+            bytes[idx + 1] = 255; // G
+            bytes[idx + 2] = 0; // R
+            bytes[idx + 3] = 255; // A
+          }
+        }
+      }
+
+      final buffer = LivenessImageBuffer(
+        width: 10,
+        height: 10,
+        format: LivenessImageFormat.bgra8888,
+        planes: [
+          LivenessImagePlane(
+            bytes: bytes,
+            bytesPerRow: 10 * 4,
+            bytesPerPixel: 4,
+          ),
+        ],
+      );
+
+      // Crop box overflowing on the left (x = -2)
+      const bbox = FaceBoundingBox(x: -2, y: 0, width: 10, height: 10);
+      final tensor = ImagePreprocessor.preprocessBufferToTensor(
+        buffer,
+        boundingBox: bbox,
+        expansionFactor: 1.0,
+        targetSize: 10,
+        useNchw: false,
+      );
+
+      // Should complete without out-of-range exception and contain mirrored values
+      expect(tensor.length, equals(300));
+    });
+
+    test('preprocessBufferToTensor supports isBgr: true for BGR channel ordering', () {
+      final bytes = Uint8List(10 * 10 * 4);
+      for (int i = 0; i < bytes.length; i += 4) {
+        bytes[i] = 255; // B = 255
+        bytes[i + 1] = 128; // G = 128
+        bytes[i + 2] = 0; // R = 0
+        bytes[i + 3] = 255;
+      }
+
+      final buffer = LivenessImageBuffer(
+        width: 10,
+        height: 10,
+        format: LivenessImageFormat.bgra8888,
+        planes: [
+          LivenessImagePlane(
+            bytes: bytes,
+            bytesPerRow: 10 * 4,
+            bytesPerPixel: 4,
+          ),
+        ],
+      );
+
+      final tensorBgr = ImagePreprocessor.preprocessBufferToTensor(
+        buffer,
+        targetSize: 10,
+        useNchw: true,
+        isBgr: true,
+      );
+
+      final hw = 10 * 10;
+      expect(tensorBgr[0], equals(1.0)); // Channel 0 is B (255/255)
+      expect(tensorBgr[hw], closeTo(128 / 255.0, 1e-3)); // Channel 1 is G (128/255)
+      expect(tensorBgr[2 * hw], equals(0.0)); // Channel 2 is R (0/255)
     });
   });
 
