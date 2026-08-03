@@ -166,13 +166,11 @@ void processCameraFrame(CameraImage cameraImage, int sensorRotation) async {
         .toList(),
   );
 
-  // No boundingBox passed - evaluates full frame!
+  // All anti-spoofing protection layers (Proximity Gate, Micro-Texture,
+  // YCbCr Color Space, 2D Laplacian High-Res Screen Analysis) are ENABLED BY DEFAULT!
   final LivenessResult result = await detector.detectLivenessFromBuffer(
     buffer,
     rotation: sensorRotation,
-    enableProximityGate: true,
-    enableTextureAnalysis: true,
-    enableColorSpaceAnalysis: true,
   );
 
   if (result.isReal) {
@@ -296,10 +294,14 @@ void dispose() {
 
 ## Recent Improvements & Changelog
 
-### 🚀 Multi-Layer Anti-Spoofing & Accuracy Upgrades
-- **Proximity & Aspect Ratio Gate:** Added early rejection gate (`FaceProximityGate`) to discard faces that are too small ($<5\%$), too close ($>85\%$), or unnaturally warped.
+### 🚀 Multi-Layer Anti-Spoofing & Accuracy Upgrades (v0.0.4)
+- **High-Resolution Screen Replay Anti-Spoofing:** Added 2D Laplacian frequency variance and patch focus depth dispersal ($\sigma^2_{\text{PatchLap}}$) to catch high-density OLED/Retina screen replays.
+- **Glasses Glare & Frame Edge False Positive Fix:** Specular glare highlight masking ($\ge 245$ brightness) and multi-region HOG peak de-biasing (`LbpHogAnalyzer` & `ColorSpaceAnalyzer`) to prevent linear glasses frames and anti-reflective lens glare from causing false positive spoof classifications.
+- **Multi-Factor Liveness Decision Fusion Engine:** Upgraded decision engine with adaptive neural model thresholding and multi-heuristic validation.
+- **Zero-Config Default Heuristic Engines:** All anti-spoofing heuristic layers are enabled by default (`true`).
+- **Proximity & Aspect Ratio Gate:** Early rejection gate (`FaceProximityGate`) to discard small photo cards ($<5\%$) or extreme close-ups ($>85\%$).
 - **Micro-Texture LBP / HOG Engine:** Extracted $256 \times 256$ un-downscaled crops to detect paper inkjet patterns (`printSpoof`) and screen grid alignments (`screenReplaySpoof`).
-- **YCbCr Chrominance Variance Analysis:** Directly analyzes YUV/YCbCr color space dispersion ($\sigma^2_{CbCr}$) to catch emissive RGB screen replay attacks.
+- **YCbCr Chrominance Variance Analysis:** Analyzes YUV/YCbCr color space dispersion ($\sigma^2_{CbCr}$) to catch emissive RGB screen replay attacks.
 - **Adaptive Screen Flash Overlay:** Added `LivenessFlashController` and `AdaptiveScreenFlashOverlay` for active photometric stereo assist.
 - **LiteRT Next `CompiledModel` Integration:** Powered by `flutter_litert` `CompiledModel` with zero-copy hardware acceleration (GPU / NPU / CPU fallback).
 - **Asymmetric EMA Glare Resistance:** Asymmetric Exponential Moving Average ($\alpha=0.1$ for drops, $\alpha=0.4$ for recovery) to prevent glasses reflections from triggering false spoof drops.

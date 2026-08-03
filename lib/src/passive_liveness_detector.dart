@@ -11,6 +11,7 @@ import 'models/liveness_image_buffer.dart';
 import 'models/liveness_result.dart';
 import 'utils/color_space_analyzer.dart';
 import 'utils/face_proximity_gate.dart';
+import 'utils/high_res_screen_analyzer.dart';
 import 'utils/image_preprocessor.dart';
 import 'utils/lbp_hog_analyzer.dart';
 import 'utils/liveness_logger.dart';
@@ -254,7 +255,42 @@ class PassiveLivenessDetector {
     }
   }
 
-  /// Run passive liveness detection directly on a raw camera buffer ([LivenessImageBuffer]).
+  /// Runs passive face liveness and anti-spoofing detection directly on a raw camera image buffer ([LivenessImageBuffer]).
+  ///
+  /// Returns a [LivenessResult] containing `isReal`, classification `status`, real/spoof confidence scores,
+  /// and detailed physical heuristic metrics (LBP ratio, HOG dominance, chrominance variance, patch Laplacian focus dispersal).
+  ///
+  /// ### Simple Usage (Recommended)
+  /// All multi-layer anti-spoofing heuristic engines (Proximity Gate, Micro-Texture Analysis,
+  /// YCbCr Color Space Analysis, and 2D Laplacian High-Res Screen Analysis) are **enabled by default** with
+  /// optimal production settings. You only need to pass the camera [buffer] and optional [boundingBox] & [rotation]:
+  ///
+  /// ```dart
+  /// final result = await detector.detectLivenessFromBuffer(
+  ///   buffer,
+  ///   boundingBox: faceBbox, // Optional (crops face if provided, uses full frame if null)
+  ///   rotation: sensorRotation, // Camera sensor rotation in degrees (0, 90, 180, 270)
+  /// );
+  ///
+  /// if (result.isReal) {
+  ///   print('Real face verified!');
+  /// } else {
+  ///   print('Spoof detected: ${result.status.name}');
+  /// }
+  /// ```
+  ///
+  /// ### Parameters:
+  /// - [buffer]: The raw camera frame image plane buffer (`NV21`, `YUV420`, or `BGRA8888`).
+  /// - [boundingBox]: Optional facial bounding box from a face detector (e.g. ML Kit). If `null`, full frame is evaluated.
+  /// - [rotation]: Sensor rotation angle in degrees (`0`, `90`, `180`, `270`). Default is `0`.
+  /// - [isRotatedBoundingBox]: Whether bounding box coordinates are in rotated frame space. Auto-detected if `null`.
+  /// - [threshold]: Logit decision threshold (default `0.0`). Positive values demand higher neural model confidence.
+  /// - [expansionFactor]: Square crop margin around the bounding box (default `1.5x`).
+  /// - [emaAlpha]: Exponential Moving Average smoothing factor across consecutive stream frames (default `0.3`).
+  /// - [enableProximityGate]: Enable face area coverage ($5\% \le \text{ratio} \le 85\%$) & aspect ratio validation. Default `true`.
+  /// - [enableTextureAnalysis]: Enable LBP halftone print noise & glasses-debiased HOG grid analysis. Default `true`.
+  /// - [enableColorSpaceAnalysis]: Enable YCbCr sub-pixel chrominance variance ($\sigma^2_{CbCr}$) screen replay analysis. Default `true`.
+  /// - [enableHighResScreenAnalysis]: Enable 2D Laplacian focus depth dispersal & specular glass highlight analysis for OLED/4K screens. Default `true`.
   Future<LivenessResult> detectLivenessFromBuffer(
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
@@ -263,19 +299,15 @@ class PassiveLivenessDetector {
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
     double emaAlpha = defaultEmaAlpha,
-    bool? useIsolate,
-    bool? useNchw,
-    int? targetSize,
-    int realLogitIndex = 0,
-    bool enableContrastStretch = false,
-    bool isBgr = false,
     bool enableProximityGate = true,
-    bool enableTextureAnalysis = false,
-    bool enableColorSpaceAnalysis = false,
-    FaceProximityGate proximityGate = const FaceProximityGate(),
-    LbpHogAnalyzer textureAnalyzer = const LbpHogAnalyzer(),
-    ColorSpaceAnalyzer colorSpaceAnalyzer = const ColorSpaceAnalyzer(),
+    bool enableTextureAnalysis = true,
+    bool enableColorSpaceAnalysis = true,
+    bool enableHighResScreenAnalysis = true,
   }) async {
+    final proximityGate = const FaceProximityGate();
+    final textureAnalyzer = const LbpHogAnalyzer();
+    final colorSpaceAnalyzer = const ColorSpaceAnalyzer();
+    final highResScreenAnalyzer = const HighResScreenAnalyzer();
     if (!isInitialized) {
       throw StateError(
         'PassiveLivenessDetector is not initialized. Call initialize() first.',
@@ -336,8 +368,25 @@ class PassiveLivenessDetector {
       isScreenReplaySpoof = colorResult.isScreenReplaySpoof;
     }
 
-    final effectiveUseNchw = useNchw ?? _isNativeNchw;
-    final effectiveTargetSize = targetSize ?? _modelTargetSize;
+    // 4. 2D Laplacian Frequency & Focus Depth Analysis for High-Res Screens
+    bool isHighResScreenSpoof = false;
+
+    if (enableHighResScreenAnalysis) {
+      final highResCrop = ImagePreprocessor.extractHighResCrop(
+        buffer,
+        boundingBox: boundingBox,
+        rotation: rotation,
+      );
+      final highResResult = highResScreenAnalyzer.analyzeGrayscaleCrop(
+        highResCrop,
+        256,
+        256,
+      );
+      isHighResScreenSpoof = highResResult.isHighResScreenSpoof;
+    }
+
+    final effectiveUseNchw = _isNativeNchw;
+    final effectiveTargetSize = _modelTargetSize;
 
     _ensureInputShapeAllocated(
       targetSize: effectiveTargetSize,
@@ -352,13 +401,13 @@ class PassiveLivenessDetector {
       expansionFactor: expansionFactor,
       targetSize: effectiveTargetSize,
       useNchw: effectiveUseNchw,
-      isBgr: isBgr,
-      enableContrastStretch: enableContrastStretch,
+      isBgr: false,
+      enableContrastStretch: false,
     );
 
     _logTensorStats(tensorData);
 
-    final runOnIsolate = useIsolate ?? (_isolateInterpreter != null);
+    final runOnIsolate = _isolateInterpreter != null;
     final logits = await _runInference(
       tensorData: tensorData,
       effectiveUseNchw: effectiveUseNchw,
@@ -367,8 +416,8 @@ class PassiveLivenessDetector {
     );
     stopwatch.stop();
 
-    final realIdx = realLogitIndex.clamp(0, 1);
-    final spoofIdx = 1 - realIdx;
+    const realIdx = 0;
+    const spoofIdx = 1;
 
     final realLogit = logits[realIdx];
     final spoofLogit = logits[spoofIdx];
@@ -394,7 +443,8 @@ class PassiveLivenessDetector {
     } else {
       effectiveAlpha = emaAlpha;
       _emaRealScore =
-          (currentRealProb * effectiveAlpha) + (_emaRealScore! * (1.0 - effectiveAlpha));
+          (currentRealProb * effectiveAlpha) +
+          (_emaRealScore! * (1.0 - effectiveAlpha));
     }
 
     final safeEma = _emaRealScore!.clamp(1e-7, 1.0 - 1e-7);
@@ -405,11 +455,33 @@ class PassiveLivenessDetector {
         ? LivenessStatus.real
         : LivenessStatus.spoof;
 
+    // Multi-Factor Decision Fusion Engine:
+    // Protect genuine users with glasses from single-metric false positives (e.g. HOG frame edges),
+    // while catching definitive screen replay attacks (high chrominance variance).
+    // Note: isHighResScreenSpoof is a soft signal only (not a hard override) because smartphone
+    // front cameras have wide depth-of-field, making patch focus CV unreliable as a standalone gate.
     if (calculatedStatus == LivenessStatus.real) {
-      if (isPrintSpoof) {
-        calculatedStatus = LivenessStatus.printSpoof;
-      } else if (isScreenGridSpoof || isScreenReplaySpoof) {
-        calculatedStatus = LivenessStatus.screenReplaySpoof;
+      int heuristicSpoofCount = 0;
+      if (isPrintSpoof) heuristicSpoofCount++;
+      if (isScreenGridSpoof) heuristicSpoofCount++;
+      if (isScreenReplaySpoof) heuristicSpoofCount++;
+      if (isHighResScreenSpoof) heuristicSpoofCount++;
+
+      final isStrongNeuralReal = currentRealProb >= 0.70;
+
+      // Only chrominance variance (isScreenReplaySpoof) is used as a hard override.
+      // All other heuristics require multi-factor agreement.
+      if (isScreenReplaySpoof ||
+          (isStrongNeuralReal && heuristicSpoofCount >= 2) ||
+          (!isStrongNeuralReal && heuristicSpoofCount >= 1)) {
+        if (isPrintSpoof &&
+            !isHighResScreenSpoof &&
+            !isScreenGridSpoof &&
+            !isScreenReplaySpoof) {
+          calculatedStatus = LivenessStatus.printSpoof;
+        } else {
+          calculatedStatus = LivenessStatus.screenReplaySpoof;
+        }
       }
     }
 
@@ -449,33 +521,27 @@ class PassiveLivenessDetector {
     return result;
   }
 
-  /// Run passive liveness detection on image byte array (e.g. JPEG/PNG bytes).
+  /// Runs passive face liveness and anti-spoofing detection directly on raw image bytes ([Uint8List]).
+  ///
+  /// Evaluates static photo bytes (e.g. JPEG, PNG) using the full multi-layer anti-spoofing heuristic suite
+  /// (micro-texture analysis, YCbCr chrominance variance, and 2D Laplacian high-res screen analysis).
+  ///
+  /// ### Parameters:
+  /// - [imageBytes]: The raw image file bytes (`Uint8List`).
+  /// - [boundingBox]: Optional facial bounding box from a face detector. If `null`, the full image is evaluated.
+  /// - [threshold]: Logit decision threshold (default `0.0`). Positive values demand higher neural model confidence.
+  /// - [expansionFactor]: Square crop margin around face bounding box (default `1.5x`).
   Future<LivenessResult> detectLivenessFromImageBytes(
     Uint8List imageBytes, {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
-    bool? useNchw,
-    int? targetSize,
-    int realLogitIndex = 0,
-    bool enableContrastStretch = false,
-    bool isBgr = false,
   }) async {
     if (!isInitialized) {
       throw StateError(
         'PassiveLivenessDetector is not initialized. Call initialize() first.',
       );
     }
-
-    final stopwatch = Stopwatch()..start();
-
-    final effectiveUseNchw = useNchw ?? _isNativeNchw;
-    final effectiveTargetSize = targetSize ?? _modelTargetSize;
-
-    _ensureInputShapeAllocated(
-      targetSize: effectiveTargetSize,
-      useNchw: effectiveUseNchw,
-    );
 
     final ui.Codec codec = await ui.instantiateImageCodec(imageBytes);
     final ui.FrameInfo frameInfo = await codec.getNextFrame();
@@ -497,64 +563,44 @@ class PassiveLivenessDetector {
     image.dispose();
     codec.dispose();
 
-    final tensorData = ImagePreprocessor.preprocessRgbaBytesToTensor(
-      rgbaBytes,
-      width,
-      height,
+    final buffer = LivenessImageBuffer(
+      width: width,
+      height: height,
+      format: LivenessImageFormat.bgra8888,
+      planes: [
+        LivenessImagePlane(
+          bytes: rgbaBytes,
+          bytesPerRow: width * 4,
+          bytesPerPixel: 4,
+        ),
+      ],
+    );
+
+    return detectLivenessFromBuffer(
+      buffer,
       boundingBox: boundingBox,
+      rotation: 0,
+      threshold: threshold,
       expansionFactor: expansionFactor,
-      targetSize: effectiveTargetSize,
-      useNchw: effectiveUseNchw,
-      isBgr: isBgr,
-      enableContrastStretch: enableContrastStretch,
+      enableProximityGate:
+          false, // Proximity gate is disabled for static image crops
     );
-
-    _logTensorStats(tensorData);
-
-    final logits = await _runInference(
-      tensorData: tensorData,
-      effectiveUseNchw: effectiveUseNchw,
-      effectiveTargetSize: effectiveTargetSize,
-      runOnIsolate: false,
-    );
-    stopwatch.stop();
-
-    final realIdx = realLogitIndex.clamp(0, 1);
-    final spoofIdx = 1 - realIdx;
-
-    final result = LivenessResult.fromLogits(
-      realLogit: logits[realIdx],
-      spoofLogit: logits[spoofIdx],
-      threshold: threshold,
-      inferenceTime: stopwatch.elapsed,
-    );
-
-    LivenessLogger.logInferenceResult(
-      realLogit: result.realLogit,
-      spoofLogit: result.spoofLogit,
-      logitDiff: result.logitDiff,
-      currentRealProb: result.realScore,
-      emaRealScore: null,
-      isReal: result.isReal,
-      status: result.status,
-      threshold: threshold,
-      inferenceTime: stopwatch.elapsed,
-    );
-
-    return result;
   }
 
-  /// Run passive liveness detection on a static image file.
+  /// Runs passive face liveness and anti-spoofing detection directly on a static image [File].
+  ///
+  /// Evaluates static photo files (e.g. from `image_picker` or camera capture) using the full anti-spoofing heuristic suite.
+  ///
+  /// ### Parameters:
+  /// - [file]: The static image file to analyze.
+  /// - [boundingBox]: Optional facial bounding box from a face detector. If `null`, the full image is evaluated.
+  /// - [threshold]: Logit decision threshold (default `0.0`). Positive values demand higher neural model confidence.
+  /// - [expansionFactor]: Square crop margin around face bounding box (default `1.5x`).
   Future<LivenessResult> detectLivenessFromImageFile(
     File file, {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
-    bool? useNchw,
-    int? targetSize,
-    int realLogitIndex = 0,
-    bool enableContrastStretch = false,
-    bool isBgr = false,
   }) async {
     final bytes = await file.readAsBytes();
     return detectLivenessFromImageBytes(
@@ -562,11 +608,6 @@ class PassiveLivenessDetector {
       boundingBox: boundingBox,
       threshold: threshold,
       expansionFactor: expansionFactor,
-      useNchw: useNchw,
-      targetSize: targetSize,
-      realLogitIndex: realLogitIndex,
-      enableContrastStretch: enableContrastStretch,
-      isBgr: isBgr,
     );
   }
 

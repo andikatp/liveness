@@ -27,6 +27,9 @@ class TextureAnalysisResult {
 }
 
 /// Lightweight micro-texture analysis engine using Local Binary Pattern (LBP) and Histogram of Oriented Gradients (HOG).
+///
+/// Features specular glare masking (preventing glasses glare false positives) and multi-region HOG
+/// frame de-biasing (preventing linear glasses rims from triggering screen grid spoofs).
 class LbpHogAnalyzer {
   /// Threshold for non-uniform LBP pattern ratio indicating print spoofing (default: 0.38).
   final double lbpPrintThreshold;
@@ -34,9 +37,13 @@ class LbpHogAnalyzer {
   /// Threshold for HOG orientation peak dominance indicating screen grid replay (default: 0.42).
   final double hogScreenThreshold;
 
+  /// Luminance threshold above which pixels are treated as specular glare (default: 245).
+  final int specularThreshold;
+
   const LbpHogAnalyzer({
     this.lbpPrintThreshold = 0.38,
     this.hogScreenThreshold = 0.42,
+    this.specularThreshold = 245,
   });
 
   /// Pre-computed lookup table for 8-bit uniform LBP pattern check.
@@ -81,11 +88,15 @@ class LbpHogAnalyzer {
     final dx = const [-1, 0, 1, 1, 1, 0, -1, -1];
     final dy = const [-1, -1, -1, 0, 1, 1, 1, 0];
 
-    // 1. Calculate LBP histogram
+    // 1. Calculate LBP histogram with Specular Glare Masking
     for (int y = 1; y < height - 1; y++) {
       final yOffset = y * width;
       for (int x = 1; x < width - 1; x++) {
         final centerPixel = grayBytes[yOffset + x];
+
+        // Mask out specular glare pixels (bright highlights on glasses or glossy surfaces)
+        if (centerPixel >= specularThreshold) continue;
+
         int lbpCode = 0;
 
         for (int i = 0; i < 8; i++) {
@@ -106,13 +117,22 @@ class LbpHogAnalyzer {
         ? nonUniformLbpCount / totalLbpEvaluated
         : 0.0;
 
-    // 2. Calculate HOG orientation distribution (9 bins from 0 to 180 degrees)
-    final hogBins = Float64List(9);
-    double totalGradientMagnitude = 0.0;
+    // 2. Multi-Zone HOG calculation (Full Face vs Lower-Face De-Biasing for Glasses Rims)
+    final hogBinsGlobal = Float64List(9);
+    final hogBinsLower = Float64List(9);
+    double totalGlobalGradient = 0.0;
+    double totalLowerGradient = 0.0;
+
+    final upperBoundaryY = (height * 0.38).round();
 
     for (int y = 1; y < height - 1; y++) {
       final yOffset = y * width;
+      final isLowerFace = y >= upperBoundaryY;
+
       for (int x = 1; x < width - 1; x++) {
+        final centerPixel = grayBytes[yOffset + x];
+        if (centerPixel >= specularThreshold) continue;
+
         final gx = (grayBytes[yOffset + x + 1] - grayBytes[yOffset + x - 1])
             .toDouble();
         final gy =
@@ -129,32 +149,56 @@ class LbpHogAnalyzer {
         if (angleDeg >= 180.0) angleDeg = 179.9;
 
         final binIdx = (angleDeg / 20.0).floor().clamp(0, 8);
-        hogBins[binIdx] += mag;
-        totalGradientMagnitude += mag;
-      }
-    }
+        hogBinsGlobal[binIdx] += mag;
+        totalGlobalGradient += mag;
 
-    double maxBinEnergy = 0.0;
-    if (totalGradientMagnitude > 0) {
-      for (int b = 0; b < 9; b++) {
-        if (hogBins[b] > maxBinEnergy) {
-          maxBinEnergy = hogBins[b];
+        if (isLowerFace) {
+          hogBinsLower[binIdx] += mag;
+          totalLowerGradient += mag;
         }
       }
     }
 
-    final hogDominance = totalGradientMagnitude > 0
-        ? maxBinEnergy / totalGradientMagnitude
+    double maxGlobalBin = 0.0;
+    if (totalGlobalGradient > 0) {
+      for (int b = 0; b < 9; b++) {
+        if (hogBinsGlobal[b] > maxGlobalBin) {
+          maxGlobalBin = hogBinsGlobal[b];
+        }
+      }
+    }
+
+    double maxLowerBin = 0.0;
+    if (totalLowerGradient > 0) {
+      for (int b = 0; b < 9; b++) {
+        if (hogBinsLower[b] > maxLowerBin) {
+          maxLowerBin = hogBinsLower[b];
+        }
+      }
+    }
+
+    final globalDominance = totalGlobalGradient > 0
+        ? maxGlobalBin / totalGlobalGradient
+        : 0.0;
+    final lowerDominance = totalLowerGradient > 0
+        ? maxLowerBin / totalLowerGradient
         : 0.0;
 
+    // Use lower face dominance when glasses frames dominate the upper face,
+    // or average them if lower face gradient is valid.
+    final effectiveHogDominance = (totalLowerGradient > 0 && lowerDominance < globalDominance)
+        ? (globalDominance * 0.4 + lowerDominance * 0.6)
+        : globalDominance;
+
     final isPrintSpoof = lbpRatio >= lbpPrintThreshold;
-    final isScreenGridSpoof = hogDominance >= hogScreenThreshold;
+    final isScreenGridSpoof = effectiveHogDominance >= hogScreenThreshold;
 
     return TextureAnalysisResult(
       lbpNonUniformRatio: lbpRatio,
-      hogPeakDominance: hogDominance,
+      hogPeakDominance: effectiveHogDominance,
       isPrintSpoof: isPrintSpoof,
       isScreenGridSpoof: isScreenGridSpoof,
     );
   }
 }
+

@@ -34,3 +34,4 @@ face-antispoof-onnx/
 graphify-out
 skills-lock.json
 AGENTS.md
+test/fixtures/

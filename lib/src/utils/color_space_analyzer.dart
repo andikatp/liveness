@@ -61,8 +61,9 @@ class ColorSpaceAnalyzer {
     // Subsample every 4th pixel for high performance without loss of statistical accuracy
     const step = 4;
 
-    final cbList = Float64List((width ~/ step) * (height ~/ step) + 1);
-    final crList = Float64List((width ~/ step) * (height ~/ step) + 1);
+    final maxSamples = ((width + step - 1) ~/ step) * ((height + step - 1) ~/ step);
+    final cbList = Float64List(maxSamples);
+    final crList = Float64List(maxSamples);
 
     if (isBgra) {
       final plane0 = buffer.planes[0].bytes;
@@ -76,6 +77,10 @@ class ColorSpaceAnalyzer {
             final b = plane0[offset].toDouble();
             final g = plane0[offset + 1].toDouble();
             final r = plane0[offset + 2].toDouble();
+
+            // Skip specular glare pixels (high brightness >= 245)
+            final luma = 0.299 * r + 0.587 * g + 0.114 * b;
+            if (luma >= 245) continue;
 
             // BT.601 RGB -> YCbCr formulas
             final cb = 128.0 - 0.168736 * r - 0.331264 * g + 0.5 * b;

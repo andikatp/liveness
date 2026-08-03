@@ -5,3 +5,4 @@ build/
 face-antispoof-onnx/
 skills-lock.json
 *.iml
+test/fixtures/

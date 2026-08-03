@@ -1,5 +1,10 @@
 ## 0.0.4
 
+- **High-Resolution Screen Replay Anti-Spoofing (`HighResScreenAnalyzer`)**: Added 2D Laplacian frequency variance and patch focus depth dispersal ($\sigma^2_{\text{PatchLap}}$) analysis to catch high-resolution OLED/Retina/4K screen replay presentation attacks.
+- **Glasses Glare & Frame Edge False Positive Resolution**: Added specular glare highlight masking ($\ge 245$ brightness) and multi-region upper-face HOG peak de-biasing (`LbpHogAnalyzer` & `ColorSpaceAnalyzer`) to prevent linear glasses frames and anti-reflective lens glare from triggering false spoof classifications on genuine users.
+- **Multi-Factor Liveness Decision Fusion Engine**: Upgraded `PassiveLivenessDetector` decision engine to use multi-factor fusion scoring with adaptive neural model thresholding.
+- **Zero-Config Default Heuristic Engines**: All anti-spoofing heuristic layers (`enableTextureAnalysis`, `enableColorSpaceAnalysis`, `enableHighResScreenAnalysis`) are now **enabled by default (`true`)**.
+- **Streamlined API Parameter Signatures**: Cleaned up redundant internal low-level flags across `detectLivenessFromImageBytes`, `detectLivenessFromImageFile`, `detectLivenessFromBuffer`, and `LivenessFrameProcessor.processBufferFrame` for a zero-boilerplate developer experience.
 - **Face Aspect Ratio & Proximity Gate**: Added early pre-inference rejection gate (`FaceProximityGate`) to discard presentation attacks with small cropped photos ($<5\%$ area), extreme close-ups ($>85\%$ area), or distorted aspect ratios ($0.50 \dots 1.25$).
 - **Micro-Texture LBP / HOG Analysis Engine**: Added `LbpHogAnalyzer` to evaluate $256 \times 256$ un-downscaled face crops for paper inkjet print halftone patterns (Local Binary Patterns) and screen grid alignments (Histogram of Oriented Gradients).
 - **YCbCr / YUV Color Space Analysis**: Added `ColorSpaceAnalyzer` to calculate chrominance sub-sampling variance ($\sigma^2_{CbCr}$) directly from YUV camera streams to detect emissive RGB digital display screen replay attacks (iPad/tablet video replays).

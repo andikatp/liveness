@@ -72,9 +72,12 @@ class LivenessFrameProcessor {
     return isStable;
   }
 
-  /// Process a single frame from raw [LivenessImageBuffer].
-  /// Returns `null` if the processor is busy or within throttle interval.
-  /// Bypasses inference and returns previous result / pending if face is in motion.
+  /// Processes a single frame from a raw camera [LivenessImageBuffer].
+  ///
+  /// Throttles frame evaluation frequency according to [throttleInterval] to prevent UI lag,
+  /// and automatically bypasses inference during user motion blur.
+  ///
+  /// Returns `null` if the processor is busy or within the throttle interval.
   Future<LivenessResult?> processBufferFrame(
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
@@ -82,11 +85,7 @@ class LivenessFrameProcessor {
     bool? isRotatedBoundingBox,
     double threshold = 0.0,
     double expansionFactor = 1.5,
-    bool enableContrastStretch = false,
-    bool isBgr = false,
     bool enableProximityGate = true,
-    bool enableTextureAnalysis = false,
-    bool enableColorSpaceAnalysis = false,
   }) async {
     final now = DateTime.now();
 
@@ -123,11 +122,7 @@ class LivenessFrameProcessor {
         isRotatedBoundingBox: isRotatedBoundingBox,
         threshold: threshold,
         expansionFactor: expansionFactor,
-        enableContrastStretch: enableContrastStretch,
-        isBgr: isBgr,
         enableProximityGate: enableProximityGate,
-        enableTextureAnalysis: enableTextureAnalysis,
-        enableColorSpaceAnalysis: enableColorSpaceAnalysis,
       );
       _lastResult = result;
       return result;

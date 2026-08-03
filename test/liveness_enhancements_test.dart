@@ -140,6 +140,39 @@ void main() {
     });
   });
 
+  group('HighResScreenAnalyzer tests', () {
+    const analyzer = HighResScreenAnalyzer(
+      minPatchDispersalThreshold: 4.0,
+      maxSpecularRatioThreshold: 0.08,
+    );
+
+    test('Detects flat 2D screen focal plane via low patch Laplacian dispersal', () {
+      // 64x64 flat texture (uniform high-frequency grid across all patches)
+      final bytes = Uint8List(64 * 64);
+      for (int y = 0; y < 64; y++) {
+        for (int x = 0; x < 64; x++) {
+          bytes[y * 64 + x] = ((x + y) % 2 == 0) ? 200 : 50;
+        }
+      }
+
+      final result = analyzer.analyzeGrayscaleCrop(bytes, 64, 64);
+      expect(result.patchLaplacianDispersal, lessThan(4.0));
+      expect(result.isHighResScreenSpoof, isTrue);
+    });
+
+    test('Detects excessive glass screen specular glare highlights', () {
+      // 64x64 image with 20% pure white (255) specular glare hotspots
+      final bytes = Uint8List(64 * 64);
+      for (int i = 0; i < bytes.length; i++) {
+        bytes[i] = (i < bytes.length * 0.20) ? 255 : 120;
+      }
+
+      final result = analyzer.analyzeGrayscaleCrop(bytes, 64, 64);
+      expect(result.specularHighlightRatio, greaterThan(0.08));
+      expect(result.isHighResScreenSpoof, isTrue);
+    });
+  });
+
   group('LivenessFlashController tests', () {
     testWidgets('Toggles flash state during burst duration', (tester) async {
       final controller = LivenessFlashController(
@@ -158,3 +191,4 @@ void main() {
     });
   });
 }
+
