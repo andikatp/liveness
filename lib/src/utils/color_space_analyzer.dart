@@ -27,14 +27,14 @@ class ColorSpaceAnalysisResult {
 /// Evaluates YCbCr / YUV chrominance sub-sampling metrics ($\sigma^2_{CbCr}$)
 /// to detect emissive RGB digital display screen replay attacks.
 class ColorSpaceAnalyzer {
-  /// Upper bound threshold for chrominance variance (default: 160.0). Higher values indicate screen sub-pixel dispersion.
+  /// Upper bound threshold for chrominance variance (default: 140.0). Higher values indicate screen sub-pixel dispersion.
   final double maxVarianceThreshold;
 
   /// Lower bound threshold for chrominance variance (default: 1.5). Extremely low values indicate flat monochrome / synthetic photos.
   final double minVarianceThreshold;
 
   const ColorSpaceAnalyzer({
-    this.maxVarianceThreshold = 160.0,
+    this.maxVarianceThreshold = 140.0,
     this.minVarianceThreshold = 1.5,
   });
 
@@ -61,7 +61,8 @@ class ColorSpaceAnalyzer {
     // Subsample every 4th pixel for high performance without loss of statistical accuracy
     const step = 4;
 
-    final maxSamples = ((width + step - 1) ~/ step) * ((height + step - 1) ~/ step);
+    final maxSamples =
+        ((width + step - 1) ~/ step) * ((height + step - 1) ~/ step);
     final cbList = Float64List(maxSamples);
     final crList = Float64List(maxSamples);
 
@@ -120,7 +121,9 @@ class ColorSpaceAnalyzer {
                 uVal = plane1[uvOff];
                 vVal = plane1[uvOff + 1];
               }
-            } else if (plane2 != null && uvOff < plane1.length && uvOff < plane2.length) {
+            } else if (plane2 != null &&
+                uvOff < plane1.length &&
+                uvOff < plane2.length) {
               if (buffer.format == LivenessImageFormat.nv21) {
                 vVal = plane1[uvOff];
                 uVal = plane2[uvOff];
