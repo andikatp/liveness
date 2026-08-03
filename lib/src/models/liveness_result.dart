@@ -7,6 +7,21 @@ enum LivenessStatus {
 
   /// Classified as a spoof attempt.
   spoof,
+
+  /// Face is too far from the camera lens.
+  tooFar,
+
+  /// Face is too close to the camera lens.
+  tooClose,
+
+  /// Face bounding box has an unnatural aspect ratio.
+  invalidAspectRatio,
+
+  /// Detected high-frequency inkjet/paper print texture patterns (LBP spoof).
+  printSpoof,
+
+  /// Detected digital screen sub-pixel grid lines or YCbCr chrominance anomalies.
+  screenReplaySpoof,
 }
 
 /// Result of passive liveness detection for a face.
@@ -14,7 +29,7 @@ class LivenessResult {
   /// Whether the face is classified as real (live person).
   final bool isReal;
 
-  /// Human-readable status classification (`real` or `spoof`).
+  /// Human-readable status classification (`real`, `spoof`, `tooFar`, etc.).
   final LivenessStatus status;
 
   /// Softmax probability of being a real face (0.0 to 1.0).
@@ -53,6 +68,18 @@ class LivenessResult {
   /// Whether the instant single-frame model output is real (`rawLogitDiff >= threshold`).
   final bool rawIsReal;
 
+  /// Optional LBP micro-texture non-uniform pattern ratio score (high = print artifact).
+  final double? lbpUniformityScore;
+
+  /// Optional HOG dominant orientation grid energy score (high = screen grid artifact).
+  final double? hogGridDominance;
+
+  /// Ratio of face bounding box area to total camera frame area.
+  final double? faceAreaRatio;
+
+  /// Chrominance variance ($\sigma^2_{CbCr}$) metric in YCbCr color space.
+  final double? chrominanceVariance;
+
   /// Creates a [LivenessResult] containing complete classification metrics.
   const LivenessResult({
     required this.isReal,
@@ -69,16 +96,20 @@ class LivenessResult {
     double? rawSpoofScore,
     double? rawLogitDiff,
     bool? rawIsReal,
+    this.lbpUniformityScore,
+    this.hogGridDominance,
+    this.faceAreaRatio,
+    this.chrominanceVariance,
   }) : rawRealScore = rawRealScore ?? realScore,
        rawSpoofScore = rawSpoofScore ?? spoofScore,
        rawLogitDiff = rawLogitDiff ?? logitDiff,
        rawIsReal = rawIsReal ?? isReal;
 
   /// Factory constructor for pending/unstable frames.
-  factory LivenessResult.pending({double threshold = 0.0}) {
+  factory LivenessResult.pending({double threshold = 0.0, LivenessStatus status = LivenessStatus.spoof}) {
     return LivenessResult(
       isReal: false,
-      status: LivenessStatus.spoof,
+      status: status,
       realScore: 0.5,
       spoofScore: 0.5,
       realLogit: 0.0,
@@ -96,9 +127,16 @@ class LivenessResult {
     required double spoofLogit,
     double threshold = 0.0,
     Duration inferenceTime = Duration.zero,
+    double? lbpUniformityScore,
+    double? hogGridDominance,
+    double? faceAreaRatio,
+    double? chrominanceVariance,
+    LivenessStatus? overrideStatus,
   }) {
     final logitDiff = realLogit - spoofLogit;
-    final isReal = logitDiff >= threshold;
+    final isRealCalculated = logitDiff >= threshold;
+    final status = overrideStatus ?? (isRealCalculated ? LivenessStatus.real : LivenessStatus.spoof);
+    final isReal = status == LivenessStatus.real;
 
     // Numerically stable softmax
     final maxLogit = math.max(realLogit, spoofLogit);
@@ -112,7 +150,7 @@ class LivenessResult {
 
     return LivenessResult(
       isReal: isReal,
-      status: isReal ? LivenessStatus.real : LivenessStatus.spoof,
+      status: status,
       realScore: realScore,
       spoofScore: spoofScore,
       realLogit: realLogit,
@@ -121,6 +159,10 @@ class LivenessResult {
       confidence: confidence,
       threshold: threshold,
       inferenceTime: inferenceTime,
+      lbpUniformityScore: lbpUniformityScore,
+      hogGridDominance: hogGridDominance,
+      faceAreaRatio: faceAreaRatio,
+      chrominanceVariance: chrominanceVariance,
     );
   }
 
@@ -136,6 +178,10 @@ class LivenessResult {
     'confidence': confidence,
     'threshold': threshold,
     'inferenceTimeMs': inferenceTime.inMilliseconds,
+    if (lbpUniformityScore != null) 'lbpUniformityScore': lbpUniformityScore,
+    if (hogGridDominance != null) 'hogGridDominance': hogGridDominance,
+    if (faceAreaRatio != null) 'faceAreaRatio': faceAreaRatio,
+    if (chrominanceVariance != null) 'chrominanceVariance': chrominanceVariance,
   };
 
   @override

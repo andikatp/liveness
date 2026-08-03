@@ -1,3 +1,11 @@
+## 0.0.4
+
+- **Face Aspect Ratio & Proximity Gate**: Added early pre-inference rejection gate (`FaceProximityGate`) to discard presentation attacks with small cropped photos ($<5\%$ area), extreme close-ups ($>85\%$ area), or distorted aspect ratios ($0.50 \dots 1.25$).
+- **Micro-Texture LBP / HOG Analysis Engine**: Added `LbpHogAnalyzer` to evaluate $256 \times 256$ un-downscaled face crops for paper inkjet print halftone patterns (Local Binary Patterns) and screen grid alignments (Histogram of Oriented Gradients).
+- **YCbCr / YUV Color Space Analysis**: Added `ColorSpaceAnalyzer` to calculate chrominance sub-sampling variance ($\sigma^2_{CbCr}$) directly from YUV camera streams to detect emissive RGB digital display screen replay attacks (iPad/tablet video replays).
+- **Adaptive Screen Flash Overlay**: Added `LivenessFlashController` and `AdaptiveScreenFlashOverlay` UI components for active photometric stereo assist.
+- **New `LivenessStatus` Diagnostic Reason Codes**: Introduced `tooFar`, `tooClose`, `invalidAspectRatio`, `printSpoof`, and `screenReplaySpoof` to give developers detailed status feedback.
+
 ## 0.0.3
 
 - **Android Sensor Coordinate Rotation & Accuracy Fixes**: Fixed coordinate transformation for Android ML Kit portrait face bounding boxes across all sensor angles (`0°`, `90°`, `180°`, `270°`), ensuring accurate upright crops and resolving false spoof detections on Android devices.

@@ -9,7 +9,10 @@ import 'package:flutter_litert/flutter_litert.dart';
 import 'models/face_bounding_box.dart';
 import 'models/liveness_image_buffer.dart';
 import 'models/liveness_result.dart';
+import 'utils/color_space_analyzer.dart';
+import 'utils/face_proximity_gate.dart';
 import 'utils/image_preprocessor.dart';
+import 'utils/lbp_hog_analyzer.dart';
 import 'utils/liveness_logger.dart';
 
 /// Core passive liveness detector engine using MiniFAS LiteRT (TFLite) model.
@@ -266,6 +269,12 @@ class PassiveLivenessDetector {
     int realLogitIndex = 0,
     bool enableContrastStretch = false,
     bool isBgr = false,
+    bool enableProximityGate = true,
+    bool enableTextureAnalysis = false,
+    bool enableColorSpaceAnalysis = false,
+    FaceProximityGate proximityGate = const FaceProximityGate(),
+    LbpHogAnalyzer textureAnalyzer = const LbpHogAnalyzer(),
+    ColorSpaceAnalyzer colorSpaceAnalyzer = const ColorSpaceAnalyzer(),
   }) async {
     if (!isInitialized) {
       throw StateError(
@@ -274,6 +283,58 @@ class PassiveLivenessDetector {
     }
 
     final stopwatch = Stopwatch()..start();
+
+    // 1. Proximity & Aspect Ratio Gate Check
+    double? faceAreaRatio;
+    if (enableProximityGate && boundingBox != null) {
+      final gateResult = proximityGate.evaluate(
+        boundingBox: boundingBox,
+        frameWidth: buffer.width,
+        frameHeight: buffer.height,
+      );
+      faceAreaRatio = gateResult.faceAreaRatio;
+
+      if (!gateResult.isValid) {
+        stopwatch.stop();
+        return LivenessResult.pending(
+          threshold: threshold,
+          status: gateResult.status,
+        );
+      }
+    }
+
+    // 2. Micro-Texture LBP / HOG Post-Processing
+    double? lbpRatio;
+    double? hogDominance;
+    bool isPrintSpoof = false;
+    bool isScreenGridSpoof = false;
+
+    if (enableTextureAnalysis) {
+      final highResCrop = ImagePreprocessor.extractHighResCrop(
+        buffer,
+        boundingBox: boundingBox,
+        rotation: rotation,
+      );
+      final textureResult = textureAnalyzer.analyzeGrayscaleCrop(
+        highResCrop,
+        256,
+        256,
+      );
+      lbpRatio = textureResult.lbpNonUniformRatio;
+      hogDominance = textureResult.hogPeakDominance;
+      isPrintSpoof = textureResult.isPrintSpoof;
+      isScreenGridSpoof = textureResult.isScreenGridSpoof;
+    }
+
+    // 3. YCbCr Chrominance Variance Analysis
+    double? chrominanceVar;
+    bool isScreenReplaySpoof = false;
+
+    if (enableColorSpaceAnalysis) {
+      final colorResult = colorSpaceAnalyzer.analyzeBuffer(buffer);
+      chrominanceVar = colorResult.chrominanceVariance;
+      isScreenReplaySpoof = colorResult.isScreenReplaySpoof;
+    }
 
     final effectiveUseNchw = useNchw ?? _isNativeNchw;
     final effectiveTargetSize = targetSize ?? _modelTargetSize;
@@ -317,15 +378,15 @@ class PassiveLivenessDetector {
       spoofLogit: spoofLogit,
       threshold: threshold,
       inferenceTime: stopwatch.elapsed,
+      lbpUniformityScore: lbpRatio,
+      hogGridDominance: hogDominance,
+      faceAreaRatio: faceAreaRatio,
+      chrominanceVariance: chrominanceVar,
     );
 
     // Balanced EMA Calculation:
-    // 1. Calculate current frame real probability using numerically stable Softmax:
     final currentRealProb = 1.0 / (1.0 + math.exp(spoofLogit - realLogit));
 
-    // 2. Select EMA Alpha:
-    // Uses balanced alpha = 0.4 (or passed emaAlpha) so EMA smooths single-frame noise
-    // while recovering to REAL within 2 consecutive high-confidence frames.
     final double effectiveAlpha;
     if (_emaRealScore == null) {
       _emaRealScore = currentRealProb;
@@ -336,16 +397,25 @@ class PassiveLivenessDetector {
           (currentRealProb * effectiveAlpha) + (_emaRealScore! * (1.0 - effectiveAlpha));
     }
 
-    // 3. Clamp EMA & 4. Re-derive logit difference:
     final safeEma = _emaRealScore!.clamp(1e-7, 1.0 - 1e-7);
     final spoofScoreEma = 1.0 - safeEma;
     final smoothedDiff = math.log(safeEma / (1.0 - safeEma));
 
+    LivenessStatus calculatedStatus = (smoothedDiff >= threshold)
+        ? LivenessStatus.real
+        : LivenessStatus.spoof;
+
+    if (calculatedStatus == LivenessStatus.real) {
+      if (isPrintSpoof) {
+        calculatedStatus = LivenessStatus.printSpoof;
+      } else if (isScreenGridSpoof || isScreenReplaySpoof) {
+        calculatedStatus = LivenessStatus.screenReplaySpoof;
+      }
+    }
+
     final result = LivenessResult(
-      isReal: smoothedDiff >= threshold,
-      status: (smoothedDiff >= threshold)
-          ? LivenessStatus.real
-          : LivenessStatus.spoof,
+      isReal: calculatedStatus == LivenessStatus.real,
+      status: calculatedStatus,
       realScore: safeEma,
       spoofScore: spoofScoreEma,
       realLogit: rawResult.realLogit,
@@ -358,6 +428,10 @@ class PassiveLivenessDetector {
       rawSpoofScore: rawResult.spoofScore,
       rawLogitDiff: rawResult.logitDiff,
       rawIsReal: rawResult.isReal,
+      lbpUniformityScore: lbpRatio,
+      hogGridDominance: hogDominance,
+      faceAreaRatio: faceAreaRatio,
+      chrominanceVariance: chrominanceVar,
     );
 
     LivenessLogger.logInferenceResult(

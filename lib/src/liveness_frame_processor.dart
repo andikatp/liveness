@@ -84,6 +84,9 @@ class LivenessFrameProcessor {
     double expansionFactor = 1.5,
     bool enableContrastStretch = false,
     bool isBgr = false,
+    bool enableProximityGate = true,
+    bool enableTextureAnalysis = false,
+    bool enableColorSpaceAnalysis = false,
   }) async {
     final now = DateTime.now();
 
@@ -122,6 +125,9 @@ class LivenessFrameProcessor {
         expansionFactor: expansionFactor,
         enableContrastStretch: enableContrastStretch,
         isBgr: isBgr,
+        enableProximityGate: enableProximityGate,
+        enableTextureAnalysis: enableTextureAnalysis,
+        enableColorSpaceAnalysis: enableColorSpaceAnalysis,
       );
       _lastResult = result;
       return result;

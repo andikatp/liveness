@@ -631,4 +631,94 @@ class ImagePreprocessor {
 
     return file;
   }
+
+  /// Extracts an un-downscaled grayscale crop (default target size 256x256) of the center face region
+  /// for high-frequency micro-texture analysis (LBP / HOG).
+  static Uint8List extractHighResCrop(
+    LivenessImageBuffer buffer, {
+    FaceBoundingBox? boundingBox,
+    int rotation = 0,
+    int targetSize = 256,
+  }) {
+    final rawW = buffer.width;
+    final rawH = buffer.height;
+    final normRotation = ((rotation % 360) + 360) % 360;
+
+    final faceBbox =
+        boundingBox ??
+        FaceBoundingBox(
+          x: 0,
+          y: 0,
+          width: rawW.toDouble(),
+          height: rawH.toDouble(),
+        );
+
+    final boxW = math.max(1.0, faceBbox.width);
+    final boxH = math.max(1.0, faceBbox.height);
+    final baseSide = math.max(boxW, boxH);
+    final double cropSize = baseSide; // 1.0x tight center face crop for micro-texture analysis
+
+    final double cropLeft = (faceBbox.centerX - cropSize / 2.0).toInt().toDouble();
+    final double cropTop = (faceBbox.centerY - cropSize / 2.0).toInt().toDouble();
+
+    final resultBytes = Uint8List(targetSize * targetSize);
+    final isBgra = buffer.format == LivenessImageFormat.bgra8888;
+    final Uint8List plane0 = buffer.planes[0].bytes;
+    final int p0Stride = buffer.planes[0].bytesPerRow;
+    final double step = cropSize / targetSize;
+
+    for (int y = 0; y < targetSize; y++) {
+      final double cy = cropTop + y * step;
+      for (int x = 0; x < targetSize; x++) {
+        final double cx = cropLeft + x * step;
+
+        double rawX = cx;
+        double rawY = cy;
+
+        switch (normRotation) {
+          case 90:
+            rawX = cropLeft + cy;
+            rawY = cropTop + cropSize - cx;
+            break;
+          case 180:
+            rawX = cropLeft + cropSize - cx;
+            rawY = cropTop + cropSize - cy;
+            break;
+          case 270:
+            rawX = cropLeft + cropSize - cy;
+            rawY = cropTop + cx;
+            break;
+          case 0:
+          default:
+            rawX = cx;
+            rawY = cy;
+            break;
+        }
+
+        final int srcX = _reflect101(rawX.round(), rawW - 1);
+        final int srcY = _reflect101(rawY.round(), rawH - 1);
+
+        int gray = 0;
+        if (isBgra) {
+          final offset = srcY * p0Stride + (srcX << 2);
+          if (offset + 2 < plane0.length) {
+            final b = plane0[offset];
+            final g = plane0[offset + 1];
+            final r = plane0[offset + 2];
+            gray = (0.299 * r + 0.587 * g + 0.114 * b).round().clamp(0, 255);
+          }
+        } else {
+          final yIdx = srcY * p0Stride + srcX;
+          if (yIdx < plane0.length) {
+            gray = plane0[yIdx];
+          }
+        }
+
+        resultBytes[y * targetSize + x] = gray;
+      }
+    }
+
+    return resultBytes;
+  }
 }
+

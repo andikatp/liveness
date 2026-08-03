@@ -16,8 +16,74 @@ An ultra-lightweight, high-performance passive face anti-spoofing (liveness) det
 - 👓 **Glasses Glare Resistance (Asymmetric EMA)**: Uses Asymmetric Exponential Moving Average filtering ($\alpha=0.1$ for score drops, $\alpha=0.4$ for recovery) to resist momentary specular reflections on glasses.
 - 🏃 **Motion Gate & Stability Heuristic**: Tracks bounding box delta shifts to bypass inference on motion-blurred or out-of-focus frames during user movement.
 - 🖼️ **Static Photo & File Detection**: Uses Flutter's built-in C++ Skia engine codecs (`dart:ui`) to evaluate liveness from static images (`File` or `Uint8List`) with **zero external image package dependencies**.
-- 📱 **Android Rotated Bounding Box Mapping**: Built-in `isRotatedBoundingBox` auto-detection and `FaceBoundingBox.toRawBufferSpace()` transformation for portrait ML Kit face detection bounding boxes on Android (`0°`, `90°`, `180°`, `270°`).
-- 💡 **Adaptive Contrast Stretching & Edge Clamping**: Automatically normalizes dark backlit faces and uses Edge Pixel Replication (`BORDER_REPLICATE`) to eliminate black border artifacts.
+- 📱 **Android Rotated Bounding Box Mapping**: Built-in `isRotatedBoundingBox` auto-detection and `FaceBoundingBox.toRawBufferSpace()` transformation for portrait ML Kit face detection bounding boxes on Android (`0°`, `- 💡 **Adaptive Contrast Stretching & Edge Clamping**: Automatically normalizes dark backlit faces and uses Edge Pixel Replication (`BORDER_REPLICATE`) to eliminate black border artifacts.
+- 🛡️ **Multi-Layer Anti-Spoofing Protection Engine**:
+  - **Proximity & Aspect Ratio Gate**: Rejects presentation attacks with small cropped photos or extreme lens close-ups ($5\% \le \text{faceAreaRatio} \le 85\%$).
+  - **Micro-Texture LBP / HOG Analyzer**: Evaluates un-downscaled $256 \times 256$ face crops to detect inkjet paper print noise (LBP) and screen sub-pixel grid lines (HOG).
+  - **YCbCr Chrominance Variance Analysis**: Inspects $Cb/Cr$ sub-pixel color space dispersion ($\sigma^2_{CbCr}$) to separate digital LCD/OLED screen replays from natural skin reflectance.
+  - **Adaptive Screen Flash (Active Photometric Stereo)**: Brief high-brightness screen flash UI overlay (`LivenessFlashController` & `AdaptiveScreenFlashOverlay`) to verify 3D skin reflectance bounce.
+
+---
+
+## Multi-Layer Anti-Spoofing Protection Layers
+
+### 1. Face Aspect Ratio & Proximity Gate
+Prevents attackers from tricking the detector by holding up a tiny printed photo card or ID card close to the lens.
+```dart
+final result = await detector.detectLivenessFromBuffer(
+  buffer,
+  boundingBox: faceBbox,
+  enableProximityGate: true, // Automatically filters tooFar, tooClose, invalidAspectRatio
+);
+
+if (result.status == LivenessStatus.tooFar) {
+  print('Please move closer to the camera');
+} else if (result.status == LivenessStatus.tooClose) {
+  print('Please move slightly further away');
+}
+```
+
+### 2. Micro-Texture LBP / HOG Analysis Engine
+Evaluates high-frequency spatial gradients on un-downscaled $256 \times 256$ crops to capture halftone inkjet printer patterns (LBP) and screen grid lines (HOG):
+```dart
+final result = await detector.detectLivenessFromBuffer(
+  buffer,
+  boundingBox: faceBbox,
+  enableTextureAnalysis: true,
+);
+
+if (result.status == LivenessStatus.printSpoof) {
+  print('Paper printout attack detected!');
+}
+```
+
+### 3. YCbCr / YUV Color Space Transformation
+Analyzes chrominance sub-sampling variance ($\sigma^2_{CbCr}$) directly from YUV camera streams to detect emissive RGB digital display screen replays (iPad/tablet video replays):
+```dart
+final result = await detector.detectLivenessFromBuffer(
+  buffer,
+  enableColorSpaceAnalysis: true,
+);
+
+if (result.status == LivenessStatus.screenReplaySpoof) {
+  print('Digital screen replay attack detected!');
+}
+```
+
+### 4. Adaptive Screen Flash Overlay (Photometric Stereo Assist)
+Triggers a brief full-screen flash overlay to bounce light on the user's face:
+```dart
+final flashController = LivenessFlashController();
+
+// Wrap camera preview in UI:
+AdaptiveScreenFlashOverlay(
+  controller: flashController,
+  child: CameraPreview(cameraController),
+);
+
+// Trigger flash on face detection:
+await flashController.triggerFlash();
+```
 
 ---
 
@@ -104,12 +170,15 @@ void processCameraFrame(CameraImage cameraImage, int sensorRotation) async {
   final LivenessResult result = await detector.detectLivenessFromBuffer(
     buffer,
     rotation: sensorRotation,
+    enableProximityGate: true,
+    enableTextureAnalysis: true,
+    enableColorSpaceAnalysis: true,
   );
 
   if (result.isReal) {
     print('Real human face!');
   } else {
-    print('Spoof face detected!');
+    print('Spoof face detected: ${result.status.name}');
   }
 }
 ```
@@ -143,6 +212,9 @@ final processor = LivenessFrameProcessor(
 final LivenessResult? result = await processor.processBufferFrame(
   buffer,
   rotation: sensorRotation,
+  enableProximityGate: true,
+  enableTextureAnalysis: true,
+  enableColorSpaceAnalysis: true,
 );
 ```
 
@@ -211,23 +283,28 @@ void dispose() {
 |---|---|
 | `PassiveLivenessDetector` | Main engine class for initializing the LiteRT model and running inferences. |
 | `LivenessFrameProcessor` | Stream processor with motion-gating heuristic and frame throttling. |
+| `FaceProximityGate` | Evaluates face bounding box area coverage and aspect ratio to prevent close-up print attacks. |
+| `LbpHogAnalyzer` | Micro-texture analysis engine for Local Binary Patterns (LBP) and Histogram of Oriented Gradients (HOG). |
+| `ColorSpaceAnalyzer` | Calculates YCbCr chrominance variance ($\sigma^2_{CbCr}$) to spot digital screen replay attacks. |
+| `LivenessFlashController` | UI controller for triggering momentary high-brightness photometric stereo screen flashes. |
+| `AdaptiveScreenFlashOverlay` | Flutter UI overlay widget rendering full-screen flash bursts during camera stream capture. |
 | `LivenessImageBuffer` | Lightweight container for camera raw byte planes (`NV21`, `YUV420`, `BGRA8888`). |
-| `FaceBoundingBox` | Coordinates (`x`, `y`, `width`, `height`) defining the face area. **Optional**. Supports `.fromRect(Rect)`. |
-| `LivenessResult` | Detection result containing `isReal`, `realScore`, `spoofScore`, `logitDiff`, and `inferenceTime`. |
+| `FaceBoundingBox` | Coordinates (`x`, `y`, `width`, `height`) defining the face area. **Optional**. |
+| `LivenessResult` | Detailed result containing `isReal`, `status`, `realScore`, `lbpUniformityScore`, `hogGridDominance`, `chrominanceVariance`, and `inferenceTime`. |
 
 ---
 
 ## Recent Improvements & Changelog
 
-### 🚀 Performance & Accuracy Upgrades
-- **LiteRT Next `CompiledModel` Integration:** Upgraded engine to `flutter_litert` `CompiledModel` with zero-copy hardware acceleration (GPU / NPU / CPU fallback).
-- **Standalone Support (Optional BoundingBox):** Bounding box parameter is optional; default fallback automatically processes the full image frame.
-- **Asymmetric EMA Glare Resistance:** Implemented Asymmetric Exponential Moving Average ($\alpha=0.1$ for score drops, $\alpha=0.4$ for recovery) to prevent specular lens reflections on **glasses** from causing false spoof drops.
-- **Bounding Box Motion Stability Gate:** Added motion stability heuristic ($5\%$ position/size shift threshold) in `LivenessFrameProcessor` to bypass TFLite inference during user movement.
-- **Android Sensor Coordinate Rotation:** Auto-transforms ML Kit portrait face bounding boxes to match raw landscape sensor buffers (`0°`, `90°`, `180°`, `270°`).
-- **Edge Pixel Replication (`BORDER_REPLICATE`):** Switched from zero-padding to coordinate clamping (`rawX.round().clamp(0, rawW - 1)`), eliminating pitch-black border artifacts on edge face crops.
-- **Adaptive Contrast Stretching:** Added `enableContrastStretch` option to automatically brighten dark, backlit face crops without distorting skin moiré signals.
-- **Visual Tensor Dumper:** Added `ImagePreprocessor.saveTensorToDisk(...)` to export 128x128 Float32List tensors to PNG/PPM images for debugging.
+### 🚀 Multi-Layer Anti-Spoofing & Accuracy Upgrades
+- **Proximity & Aspect Ratio Gate:** Added early rejection gate (`FaceProximityGate`) to discard faces that are too small ($<5\%$), too close ($>85\%$), or unnaturally warped.
+- **Micro-Texture LBP / HOG Engine:** Extracted $256 \times 256$ un-downscaled crops to detect paper inkjet patterns (`printSpoof`) and screen grid alignments (`screenReplaySpoof`).
+- **YCbCr Chrominance Variance Analysis:** Directly analyzes YUV/YCbCr color space dispersion ($\sigma^2_{CbCr}$) to catch emissive RGB screen replay attacks.
+- **Adaptive Screen Flash Overlay:** Added `LivenessFlashController` and `AdaptiveScreenFlashOverlay` for active photometric stereo assist.
+- **LiteRT Next `CompiledModel` Integration:** Powered by `flutter_litert` `CompiledModel` with zero-copy hardware acceleration (GPU / NPU / CPU fallback).
+- **Asymmetric EMA Glare Resistance:** Asymmetric Exponential Moving Average ($\alpha=0.1$ for drops, $\alpha=0.4$ for recovery) to prevent glasses reflections from triggering false spoof drops.
+- **Bounding Box Motion Stability Gate:** Bypasses TFLite inference during motion blur.
+- **Edge Pixel Replication (`BORDER_REPLICATE`):** Smooth mirror coordinate clamping (`_reflect101`) to eliminate black border artifacts.
 
 ---
 
