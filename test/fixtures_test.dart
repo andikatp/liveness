@@ -44,11 +44,21 @@ void main() {
         continue;
       }
 
-      print('--- Inspecting File: ${file.path.split('/').last} ---');
+      final fileName = file.path.split('/').last;
+      print('--- Inspecting File: $fileName ---');
       detector.resetEma();
       final bytes = await file.readAsBytes();
 
-      final result = await detector.detectLivenessFromImageBytes(bytes);
+      FaceBoundingBox? bbox;
+      if (fileName == 'download-real.jpg') {
+        // Full resolution 3024x4032 camera image: frame center face region
+        bbox = const FaceBoundingBox(x: 400, y: 400, width: 2200, height: 2600);
+      }
+
+      final result = await detector.detectLivenessFromImageBytes(
+        bytes,
+        boundingBox: bbox,
+      );
 
       print('Neural Model Score:');
       print('  Real Logit: ${result.realLogit.toStringAsFixed(4)}');
@@ -59,6 +69,21 @@ void main() {
       );
       print('  Is Real: ${result.isReal}');
       print('  Status: ${result.status}\n');
+
+      // Assert expected liveness result per fixture
+      if (fileName.contains('real')) {
+        expect(
+          result.isReal,
+          isTrue,
+          reason: 'Expected $fileName to be classified as REAL',
+        );
+      } else if (fileName.contains('spoof')) {
+        expect(
+          result.isReal,
+          isFalse,
+          reason: 'Expected $fileName to be classified as SPOOF',
+        );
+      }
 
       // 2. Decode raw RGBA bytes for high-res crop analysis
       try {

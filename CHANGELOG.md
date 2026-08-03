@@ -1,5 +1,9 @@
-## 0.0.4
+## 0.0.5
 
+- **Lower-end Device Compatibility (Low Light & High Sensor Noise)**: Re-enabled automatic brightness adjustment (`enableContrastStretch`) in the main inference pipeline to improve neural model accuracy on budget phones with dark environments.
+- **Chrominance Variance Threshold Tuning**: Increased `ColorSpaceAnalyzer.maxVarianceThreshold` from `140.0` to `146.0` and decreased `minVarianceThreshold` from `1.5` to `0.5` to reduce false spoof rejections on budget devices with noisy image sensors, without compromising attack detection accuracy.
+
+## 0.0.4
 - **High-Resolution Screen Replay Anti-Spoofing (`HighResScreenAnalyzer`)**: Added 2D Laplacian frequency variance and patch focus depth dispersal ($\sigma^2_{\text{PatchLap}}$) analysis to catch high-resolution OLED/Retina/4K screen replay presentation attacks.
 - **Glasses Glare & Frame Edge False Positive Resolution**: Added specular glare highlight masking ($\ge 245$ brightness) and multi-region upper-face HOG peak de-biasing (`LbpHogAnalyzer` & `ColorSpaceAnalyzer`) to prevent linear glasses frames and anti-reflective lens glare from triggering false spoof classifications on genuine users.
 - **Multi-Factor Liveness Decision Fusion Engine**: Upgraded `PassiveLivenessDetector` decision engine to use multi-factor fusion scoring with adaptive neural model thresholding.

@@ -402,7 +402,7 @@ class PassiveLivenessDetector {
       targetSize: effectiveTargetSize,
       useNchw: effectiveUseNchw,
       isBgr: false,
-      enableContrastStretch: false,
+      enableContrastStretch: true,
     );
 
     _logTensorStats(tensorData);

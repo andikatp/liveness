@@ -1,6 +1,6 @@
 name: passive_liveness
 description: "Ultra-lightweight passive face liveness detection using LiteRT (TensorFlow Lite) for Flutter on iOS and Android."
-version: 0.0.4
+version: 0.0.5
 homepage: https://github.com/andikatp/passive_liveness
 repository: https://github.com/andikatp/passive_liveness
 issue_tracker: https://github.com/andikatp/passive_liveness/issues
