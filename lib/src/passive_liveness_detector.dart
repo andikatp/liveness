@@ -218,7 +218,10 @@ class PassiveLivenessDetector {
     bool isScreenReplaySpoof = false;
 
     if (enableColorSpaceAnalysis) {
-      final colorResult = colorSpaceAnalyzer.analyzeBuffer(buffer);
+      final colorResult = colorSpaceAnalyzer.analyzeBuffer(
+        buffer,
+        boundingBox: boundingBox,
+      );
       chrominanceVar = colorResult.chrominanceVariance;
       isScreenReplaySpoof = colorResult.isScreenReplaySpoof;
     }

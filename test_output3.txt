@@ -1,0 +1,125 @@
+00:00 +0: loading /Users/andikatp/Documents/dgti/hrm_baru/passive_liveness/test/fixtures_test.dart
+00:00 +0: (setUpAll)
+[PASSIVE_LIVENESS] Model Init -> Shape: [1, 3, 128, 128] | Type: float32 | Format: NCHW [1, 3, 128, 128] | TargetSize: 128 | Engine: Native Platform Channel (Play Services / TFLiteSwift)
+00:00 +0: Diagnose all fixture spoof images in test/fixtures
+
+======================================================
+DIAGNOSING FIXTURE SPOOF IMAGES (11 files found)
+======================================================
+
+--- Inspecting File: download-real.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 1737x3088 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -1447.0, T: -772.0, W: 4632.0, H: 4632.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0217, max: 0.9724, mean: 0.4856, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 160ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 1663.12
+  Patch Focus Dispersal: 0.8414 (Threshold: < 4.0)
+  Specular Highlight Ratio: 0.05% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.3467 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.2104 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 118.36
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: download-real4.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 720x1600 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -840.0, T: -400.0, W: 2400.0, H: 2400.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0784, max: 0.8197, mean: 0.5048, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 62ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 914.66
+  Patch Focus Dispersal: 0.4146 (Threshold: < 4.0)
+  Specular Highlight Ratio: 0.00% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.3432 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.1396 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 56.97
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: download-real3.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 1152x2560 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -1344.0, T: -640.0, W: 3840.0, H: 3840.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.1114, max: 0.9623, mean: 0.4900, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 82ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 1798.55
+  Patch Focus Dispersal: 0.5214 (Threshold: < 4.0)
+  Specular Highlight Ratio: 0.09% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.3615 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.1381 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 116.78
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: download-real6.JPG ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 1737x3088 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -1447.0, T: -772.0, W: 4632.0, H: 4632.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0384, max: 0.9897, mean: 0.4959, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: SCREENREPLAYSPOOF (isReal: false, threshold: 0.00) | Time: 109ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: false
+  Status: LivenessStatus.screenReplaySpoof
+
+00:00 +0 -1: Diagnose all fixture spoof images in test/fixtures [E]
+  Expected: true
+    Actual: <false>
+  Expected download-real6.JPG to be classified as REAL
+  
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/fixtures_test.dart 95:9                        main.<fn>
+  
+00:00 +0 -1: (tearDownAll)
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  /Users/andikatp/Documents/dgti/hrm_baru/passive_liveness/test/fixtures_test.dart: Diagnose all fixture spoof images in test/fixtures

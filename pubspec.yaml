@@ -26,5 +26,6 @@ flutter:
         pluginClass: PassiveLivenessPlugin
       ios:
         pluginClass: PassiveLivenessPlugin
+        swiftPackage: true
   assets:
     - assets/best_model.tflite

@@ -57,9 +57,10 @@ void main() {
     final colorSpaceAnalyzer = const ColorSpaceAnalyzer();
 
     for (final file in files) {
-      if (!file.path.endsWith('.jpg') &&
-          !file.path.endsWith('.jpeg') &&
-          !file.path.endsWith('.png')) {
+      final lowerPath = file.path.toLowerCase();
+      if (!lowerPath.endsWith('.jpg') &&
+          !lowerPath.endsWith('.jpeg') &&
+          !lowerPath.endsWith('.png')) {
         continue;
       }
 
@@ -72,6 +73,9 @@ void main() {
       if (fileName == 'download-real.jpg') {
         // Full resolution 3024x4032 camera image: frame center face region
         bbox = const FaceBoundingBox(x: 400, y: 400, width: 2200, height: 2600);
+      } else if (fileName.toLowerCase() == 'download-real6.jpg') {
+        // Real6 raw is 1737x3088. Provide a center face bounding box to avoid background chrominance variance.
+        bbox = const FaceBoundingBox(x: 468, y: 1144, width: 800, height: 800);
       }
 
       final result = await detector.detectLivenessFromImageBytes(

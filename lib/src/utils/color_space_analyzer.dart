@@ -1,5 +1,7 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
+import '../models/face_bounding_box.dart';
 import '../models/liveness_image_buffer.dart';
 
 /// Result of evaluating YCbCr color space chrominance distributions.
@@ -39,7 +41,10 @@ class ColorSpaceAnalyzer {
   });
 
   /// Evaluates a raw [LivenessImageBuffer] in YUV420 or BGRA format.
-  ColorSpaceAnalysisResult analyzeBuffer(LivenessImageBuffer buffer) {
+  ColorSpaceAnalysisResult analyzeBuffer(
+    LivenessImageBuffer buffer, {
+    FaceBoundingBox? boundingBox,
+  }) {
     final width = buffer.width;
     final height = buffer.height;
 
@@ -50,6 +55,19 @@ class ColorSpaceAnalyzer {
         meanCr: 128.0,
         isScreenReplaySpoof: false,
       );
+    }
+
+    int startX = 0;
+    int startY = 0;
+    int endX = width;
+    int endY = height;
+
+    if (boundingBox != null) {
+      // Analyze only within the face region to avoid false positives from colorful backgrounds
+      startX = math.max(0, boundingBox.x.toInt());
+      startY = math.max(0, boundingBox.y.toInt());
+      endX = math.min(width, (boundingBox.x + boundingBox.width).ceil());
+      endY = math.min(height, (boundingBox.y + boundingBox.height).ceil());
     }
 
     final isBgra = buffer.format == LivenessImageFormat.bgra8888;
@@ -70,9 +88,9 @@ class ColorSpaceAnalyzer {
       final plane0 = buffer.planes[0].bytes;
       final stride = buffer.planes[0].bytesPerRow;
 
-      for (int y = 0; y < height; y += step) {
+      for (int y = startY; y < endY; y += step) {
         final rowOffset = y * stride;
-        for (int x = 0; x < width; x += step) {
+        for (int x = startX; x < endX; x += step) {
           final offset = rowOffset + (x << 2);
           if (offset + 2 < plane0.length) {
             final b = plane0[offset].toDouble();
@@ -104,9 +122,9 @@ class ColorSpaceAnalyzer {
         final uvStride = buffer.planes[1].bytesPerRow;
         final uvPixelStride = buffer.planes[1].bytesPerPixel ?? 1;
 
-        for (int y = 0; y < height; y += step) {
+        for (int y = startY; y < endY; y += step) {
           final uvRow = (y >> 1) * uvStride;
-          for (int x = 0; x < width; x += step) {
+          for (int x = startX; x < endX; x += step) {
             final uvCol = x >> 1;
             final uvOff = uvRow + uvCol * uvPixelStride;
 

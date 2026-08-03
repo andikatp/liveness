@@ -511,9 +511,10 @@ class ImagePreprocessor {
 
     final meanY = sumY / hw;
 
-    // 2. If crop is too dark (< 0.35 mean luma), stretch luma while preserving color ratios
-    if (meanY < 0.35 && (maxY - minY) > 0.05) {
-      final lumaRange = maxY - minY;
+    // 2. If crop is too dark (< 0.40 mean luma), apply gamma correction to lift shadows
+    if (meanY < 0.40 && meanY > 0.01) {
+      // Calculate gamma to lift the mean luma to roughly 0.5
+      final gamma = math.log(0.5) / math.log(meanY);
 
       for (int i = 0; i < hw; i++) {
         double r, g, b;
@@ -529,22 +530,25 @@ class ImagePreprocessor {
         }
 
         final yVal = 0.299 * r + 0.587 * g + 0.114 * b;
-        final newY = (yVal - minY) / lumaRange;
-        final ratio = newY / (yVal + 1e-7);
+        
+        if (yVal > 0) {
+          final newY = math.pow(yVal, gamma).toDouble();
+          final ratio = newY / (yVal + 1e-7);
 
-        final newR = (r * ratio).clamp(0.0, 1.0);
-        final newG = (g * ratio).clamp(0.0, 1.0);
-        final newB = (b * ratio).clamp(0.0, 1.0);
+          final newR = (r * ratio).clamp(0.0, 1.0);
+          final newG = (g * ratio).clamp(0.0, 1.0);
+          final newB = (b * ratio).clamp(0.0, 1.0);
 
-        if (useNchw) {
-          tensor[i] = newR;
-          tensor[hw + i] = newG;
-          tensor[2 * hw + i] = newB;
-        } else {
-          final idx = i * 3;
-          tensor[idx] = newR;
-          tensor[idx + 1] = newG;
-          tensor[idx + 2] = newB;
+          if (useNchw) {
+            tensor[i] = newR;
+            tensor[hw + i] = newG;
+            tensor[2 * hw + i] = newB;
+          } else {
+            final idx = i * 3;
+            tensor[idx] = newR;
+            tensor[idx + 1] = newG;
+            tensor[idx + 2] = newB;
+          }
         }
       }
     }

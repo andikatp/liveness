@@ -7,7 +7,9 @@ import 'package:flutter/services.dart';
 /// On Android, uses Google Play Services TFLite module (0MB APK size increase).
 /// On iOS, uses TensorFlowLiteSwift (~3-5MB download impact).
 class NativeLivenessEngine {
-  static const MethodChannel _channel = MethodChannel('com.andikatp.passiveLiveness');
+  static const MethodChannel _channel = MethodChannel(
+    'com.andikatp.passiveLiveness',
+  );
 
   bool _isModelLoaded = false;
 
@@ -25,9 +27,10 @@ class NativeLivenessEngine {
 
   /// Initialize the native TFLite engine by passing raw model bytes.
   Future<void> loadModel(Uint8List modelBytes) async {
-    final result = await _channel.invokeMapMethod<String, dynamic>('initModel', {
-      'modelBytes': modelBytes,
-    });
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'initModel',
+      {'modelBytes': modelBytes},
+    );
 
     if (result != null) {
       final rawShape = result['inputShape'] as List?;
@@ -46,21 +49,20 @@ class NativeLivenessEngine {
   /// Returns raw output classification logits `[realLogit, spoofLogit]`.
   Future<List<double>> runInference(Float32List tensorData) async {
     if (!_isModelLoaded) {
-      throw StateError('NativeLivenessEngine is not loaded. Call loadModel() first.');
+      throw StateError(
+        'NativeLivenessEngine is not loaded. Call loadModel() first.',
+      );
     }
 
     final result = await _channel.invokeMethod<List>('runInference', {
-      'inputData': tensorData,
+      'inputData': tensorData.buffer.asUint8List(),
     });
 
     if (result == null || result.length < 2) {
       return [0.0, 0.0];
     }
 
-    return [
-      (result[0] as num).toDouble(),
-      (result[1] as num).toDouble(),
-    ];
+    return [(result[0] as num).toDouble(), (result[1] as num).toDouble()];
   }
 
   /// Close the native TFLite interpreter and free platform resources.

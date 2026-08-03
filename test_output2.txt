@@ -1,0 +1,281 @@
+00:00 +0: loading /Users/andikatp/Documents/dgti/hrm_baru/passive_liveness/test/fixtures_test.dart
+00:00 +0: (setUpAll)
+[PASSIVE_LIVENESS] Model Init -> Shape: [1, 3, 128, 128] | Type: float32 | Format: NCHW [1, 3, 128, 128] | TargetSize: 128 | Engine: Native Platform Channel (Play Services / TFLiteSwift)
+00:00 +0: Diagnose all fixture spoof images in test/fixtures
+
+======================================================
+DIAGNOSING FIXTURE SPOOF IMAGES (11 files found)
+======================================================
+
+--- Inspecting File: download-real.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 1737x3088 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -1447.0, T: -772.0, W: 4632.0, H: 4632.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0217, max: 0.9724, mean: 0.4856, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 157ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 1663.12
+  Patch Focus Dispersal: 0.8414 (Threshold: < 4.0)
+  Specular Highlight Ratio: 0.05% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.3467 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.2104 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 118.36
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: download-real4.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 720x1600 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -840.0, T: -400.0, W: 2400.0, H: 2400.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0784, max: 0.8197, mean: 0.5048, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 60ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 914.66
+  Patch Focus Dispersal: 0.4146 (Threshold: < 4.0)
+  Specular Highlight Ratio: 0.00% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.3432 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.1396 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 56.97
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: download-real3.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 1152x2560 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -1344.0, T: -640.0, W: 3840.0, H: 3840.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.1114, max: 0.9623, mean: 0.4900, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 77ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 1798.55
+  Patch Focus Dispersal: 0.5214 (Threshold: < 4.0)
+  Specular Highlight Ratio: 0.09% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.3615 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.1381 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 116.78
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: download-real5.jpg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 1179x2556 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -1327.0, T: -639.0, W: 3834.0, H: 3834.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0000, max: 1.0000, mean: 0.4392, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 78ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 4392.46
+  Patch Focus Dispersal: 0.7870 (Threshold: < 4.0)
+  Specular Highlight Ratio: 1.71% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.2110 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.2072 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 107.34
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: download-real2.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 1152x2560 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -1344.0, T: -640.0, W: 3840.0, H: 3840.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.1056, max: 0.9937, mean: 0.4615, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 75ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 1912.57
+  Patch Focus Dispersal: 0.6596 (Threshold: < 4.0)
+  Specular Highlight Ratio: 1.02% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.3599 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.1362 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 137.75
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: download_spoof3.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 738x1600 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -831.0, T: -400.0, W: 2400.0, H: 2400.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0000, max: 1.0000, mean: 0.5193, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: SCREENREPLAYSPOOF (isReal: false, threshold: 0.00) | Time: 34ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: false
+  Status: LivenessStatus.screenReplaySpoof
+
+High-Res Screen Metrics:
+  Laplacian Variance: 7340.62
+  Patch Focus Dispersal: 0.7563 (Threshold: < 4.0)
+  Specular Highlight Ratio: 4.36% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.1914 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.3305 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 147.80
+  isScreenReplaySpoof: true
+
+------------------------------------------------------
+
+--- Inspecting File: download-real.jpg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 3024x4032 (rot: 0°) | FaceBox: [x: 400.0, y: 400.0, w: 2200.0, h: 2600.0] | Expansion: 1.50x | CropRegion: (L: -450.0, T: -250.0, W: 3900.0, H: 3900.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0028, max: 0.9647, mean: 0.5403, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: REAL (isReal: true, threshold: 0.00) | Time: 81ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: true
+  Status: LivenessStatus.real
+
+High-Res Screen Metrics:
+  Laplacian Variance: 1976.27
+  Patch Focus Dispersal: 1.0314 (Threshold: < 4.0)
+  Specular Highlight Ratio: 0.00% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.3789 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.1597 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 116.84
+  isScreenReplaySpoof: false
+
+------------------------------------------------------
+
+--- Inspecting File: captures-spoof2.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 590x1280 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -665.0, T: -320.0, W: 1920.0, H: 1920.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0000, max: 1.0000, mean: 0.4764, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: SCREENREPLAYSPOOF (isReal: false, threshold: 0.00) | Time: 24ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: false
+  Status: LivenessStatus.screenReplaySpoof
+
+High-Res Screen Metrics:
+  Laplacian Variance: 10049.75
+  Patch Focus Dispersal: 0.6493 (Threshold: < 4.0)
+  Specular Highlight Ratio: 4.32% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.2259 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.3348 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 181.78
+  isScreenReplaySpoof: true
+
+------------------------------------------------------
+
+--- Inspecting File: captured-spoof.jpeg ---
+[PASSIVE_LIVENESS] Crop Stats -> Raw: 590x1280 (rot: 0°) | FaceBox: [Full Frame] | Expansion: 1.50x | CropRegion: (L: -665.0, T: -320.0, W: 1920.0, H: 1920.0)
+[PASSIVE_LIVENESS] Input Tensor -> Shape: null | Stats -> min: 0.0000, max: 1.0000, mean: 0.4537, len: 49152
+[PASSIVE_LIVENESS] Inference Result -> Logits: [real: 3.5000, spoof: 0.5000] | LogitDiff: 3.0000 | CurrentProb: 0.9526 | EMA: 0.9526 | Status: SCREENREPLAYSPOOF (isReal: false, threshold: 0.00) | Time: 23ms
+Neural Model Score:
+  Real Logit: 3.5000
+  Spoof Logit: 0.5000
+  Logit Diff: 3.0000
+  Real Score (prob): 95.26%
+  Is Real: false
+  Status: LivenessStatus.screenReplaySpoof
+
+High-Res Screen Metrics:
+  Laplacian Variance: 11484.17
+  Patch Focus Dispersal: 0.6551 (Threshold: < 4.0)
+  Specular Highlight Ratio: 4.53% (Threshold: > 8.0%)
+  isHighResScreenSpoof: false
+
+Micro-Texture Metrics:
+  LBP Non-Uniform Ratio: 0.2056 (Threshold: >= 0.38)
+  HOG Peak Dominance: 0.3935 (Threshold: >= 0.42)
+  isPrintSpoof: false
+  isScreenGridSpoof: false
+
+Color Space Metrics:
+  Chrominance Variance: 326.30
+  isScreenReplaySpoof: true
+
+------------------------------------------------------
+
+00:01 +1: (tearDownAll)
+00:01 +1: All tests passed!
