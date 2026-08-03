@@ -1,0 +1,167 @@
+package com.andikatp.passiveLiveness
+
+import android.content.Context
+import androidx.annotation.NonNull
+import com.google.android.gms.tflite.client.TfLiteInitializationOptions
+import com.google.android.gms.tflite.gpu.support.TfLiteGpu
+import com.google.android.gms.tflite.java.TfLite
+import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.MethodChannel.MethodCallHandler
+import io.flutter.plugin.common.MethodChannel.Result
+import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.GpuDelegateFactory
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
+
+/** PassiveLivenessPlugin using Google Play Services TFLite */
+class PassiveLivenessPlugin : FlutterPlugin, MethodCallHandler {
+    private lateinit var channel: MethodChannel
+    private lateinit var context: Context
+    private var interpreter: Interpreter? = null
+    private var inputShape: IntArray? = null
+    private var isNativeNchw: Boolean = false
+    private var targetSize: Int = 128
+
+    override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+        context = flutterPluginBinding.applicationContext
+        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "com.andikatp.passiveLiveness")
+        channel.setMethodCallHandler(this)
+    }
+
+    override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
+        when (call.method) {
+            "initModel" -> {
+                val modelBytes = call.argument<ByteArray>("modelBytes")
+                if (modelBytes == null) {
+                    result.error("INVALID_ARGUMENT", "modelBytes cannot be null", null)
+                    return
+                }
+                initializeModel(modelBytes, result)
+            }
+            "runInference" -> {
+                val inputData = call.argument<FloatArray>("inputData")
+                    ?: call.argument<DoubleArray>("inputData")?.let { doubleArr ->
+                        FloatArray(doubleArr.size) { i -> doubleArr[i].toFloat() }
+                    }
+
+                if (inputData == null) {
+                    // Fallback to checking ByteArray if sent as raw bytes
+                    val byteData = call.argument<ByteArray>("inputData")
+                    if (byteData != null) {
+                        val floatBuffer = ByteBuffer.wrap(byteData).order(ByteOrder.nativeOrder()).asFloatBuffer()
+                        val floats = FloatArray(floatBuffer.remaining())
+                        floatBuffer.get(floats)
+                        runInference(floats, result)
+                        return
+                    }
+                    result.error("INVALID_ARGUMENT", "inputData cannot be null", null)
+                    return
+                }
+                runInference(inputData, result)
+            }
+            "closeModel" -> {
+                closeModel()
+                result.success(null)
+            }
+            else -> {
+                result.notImplemented()
+            }
+        }
+    }
+
+    private fun initializeModel(modelBytes: ByteArray, result: Result) {
+        // Initialize Play Services TFLite asynchronously
+        TfLite.initialize(context).addOnSuccessListener {
+            try {
+                val buffer = ByteBuffer.allocateDirect(modelBytes.size).apply {
+                    order(ByteOrder.nativeOrder())
+                    put(modelBytes)
+                    rewind()
+                }
+
+                // Attempt GPU delegate first, fallback to CPU
+                var newInterpreter: Interpreter? = null
+                try {
+                    val options = Interpreter.Options().apply {
+                        addDelegateFactory(GpuDelegateFactory())
+                    }
+                    newInterpreter = Interpreter(buffer, options)
+                } catch (e: Exception) {
+                    // GPU fallback to CPU with 2 threads
+                    val cpuOptions = Interpreter.Options().apply {
+                        setNumThreads(2)
+                    }
+                    newInterpreter = Interpreter(buffer, cpuOptions)
+                }
+
+                interpreter = newInterpreter
+                val tensor = newInterpreter.getInputTensor(0)
+                val shape = tensor.shape()
+                inputShape = shape
+
+                if (shape.size == 4) {
+                    if (shape[1] == 3) {
+                        isNativeNchw = true
+                        targetSize = shape[2]
+                    } else {
+                        isNativeNchw = false
+                        targetSize = shape[1]
+                    }
+                }
+
+                val response = mapOf(
+                    "inputShape" to shape.toList(),
+                    "isNchw" to isNativeNchw,
+                    "targetSize" to targetSize
+                )
+                result.success(response)
+            } catch (e: Exception) {
+                result.error("INIT_FAILED", "Failed to create TFLite Interpreter: ${e.message}", null)
+            }
+        }.addOnFailureListener { e ->
+            result.error("PLAY_SERVICES_FAILED", "Failed to initialize Google Play Services TFLite: ${e.message}", null)
+        }
+    }
+
+    private fun runInference(inputData: FloatArray, result: Result) {
+        val currentInterpreter = interpreter
+        if (currentInterpreter == null) {
+            result.error("NOT_INITIALIZED", "Interpreter is not initialized", null)
+            return
+        }
+
+        try {
+            val inputBuffer = ByteBuffer.allocateDirect(inputData.size * 4).apply {
+                order(ByteOrder.nativeOrder())
+                asFloatBuffer().put(inputData)
+                rewind()
+            }
+
+            val outputMap = HashMap<Int, Any>()
+            val outputFloats = Array(1) { FloatArray(2) }
+            outputMap[0] = outputFloats
+
+            currentInterpreter.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputMap)
+
+            val realLogit = outputFloats[0][0].toDouble()
+            val spoofLogit = outputFloats[0][1].toDouble()
+
+            result.success(listOf(realLogit, spoofLogit))
+        } catch (e: Exception) {
+            result.error("INFERENCE_FAILED", "Native inference execution error: ${e.message}", null)
+        }
+    }
+
+    private fun closeModel() {
+        interpreter?.close()
+        interpreter = null
+    }
+
+    override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+        channel.setMethodCallHandler(null)
+        closeModel()
+    }
+}

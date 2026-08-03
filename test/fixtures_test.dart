@@ -1,9 +1,9 @@
 // ignore_for_file: avoid_print
 
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passive_liveness/passive_liveness.dart';
 
@@ -14,6 +14,25 @@ void main() {
   final fixturesDir = Directory('test/fixtures');
 
   setUpAll(() async {
+    const channel = MethodChannel('com.andikatp.passiveLiveness');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      if (methodCall.method == 'initModel') {
+        return {
+          'inputShape': [1, 3, 128, 128],
+          'isNchw': true,
+          'targetSize': 128,
+        };
+      }
+      if (methodCall.method == 'runInference') {
+        return [3.5, 0.5];
+      }
+      if (methodCall.method == 'closeModel') {
+        return null;
+      }
+      return null;
+    });
+
     detector = PassiveLivenessDetector();
     await detector.initialize();
   });

@@ -35,3 +35,25 @@ graphify-out
 skills-lock.json
 AGENTS.md
 test/fixtures/
+
+# Android related
+.gradle/
+local.properties
+/android/.gradle
+/android/local.properties
+/android/captures
+/android/.externalNativeBuild
+/android/.cxx
+/android/build
+/android/app/build
+
+# iOS related
+/ios/Pods
+/ios/Frameworks
+/ios/.symlinks
+/ios/profile
+/ios/Runner.xcworkspace
+/ios/Runner.xcodeproj
+/ios/DerivedData
+*.xcworkspace
+*.xcodeproj

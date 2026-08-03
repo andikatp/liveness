@@ -1,0 +1,75 @@
+import 'dart:typed_data';
+
+import 'package:flutter/services.dart';
+
+/// Lightweight platform channel engine that delegates TFLite neural inference to native OS runtime.
+///
+/// On Android, uses Google Play Services TFLite module (0MB APK size increase).
+/// On iOS, uses TensorFlowLiteSwift (~3-5MB download impact).
+class NativeLivenessEngine {
+  static const MethodChannel _channel = MethodChannel('com.andikatp.passiveLiveness');
+
+  bool _isModelLoaded = false;
+
+  /// Whether the native TFLite interpreter model has been loaded.
+  bool get isModelLoaded => _isModelLoaded;
+
+  /// Model input tensor shape returned from native runtime (e.g. [1, 3, 128, 128]).
+  List<int>? modelInputShape;
+
+  /// Whether the model natively expects NCHW format (`[1, 3, H, W]`).
+  bool isNativeNchw = false;
+
+  /// Target spatial resolution expected by model (e.g. 128).
+  int modelTargetSize = 128;
+
+  /// Initialize the native TFLite engine by passing raw model bytes.
+  Future<void> loadModel(Uint8List modelBytes) async {
+    final result = await _channel.invokeMapMethod<String, dynamic>('initModel', {
+      'modelBytes': modelBytes,
+    });
+
+    if (result != null) {
+      final rawShape = result['inputShape'] as List?;
+      if (rawShape != null) {
+        modelInputShape = rawShape.cast<int>();
+      }
+      isNativeNchw = result['isNchw'] as bool? ?? false;
+      modelTargetSize = result['targetSize'] as int? ?? 128;
+    }
+
+    _isModelLoaded = true;
+  }
+
+  /// Runs neural model inference on a preprocessed Float32 tensor buffer.
+  ///
+  /// Returns raw output classification logits `[realLogit, spoofLogit]`.
+  Future<List<double>> runInference(Float32List tensorData) async {
+    if (!_isModelLoaded) {
+      throw StateError('NativeLivenessEngine is not loaded. Call loadModel() first.');
+    }
+
+    final result = await _channel.invokeMethod<List>('runInference', {
+      'inputData': tensorData,
+    });
+
+    if (result == null || result.length < 2) {
+      return [0.0, 0.0];
+    }
+
+    return [
+      (result[0] as num).toDouble(),
+      (result[1] as num).toDouble(),
+    ];
+  }
+
+  /// Close the native TFLite interpreter and free platform resources.
+  Future<void> close() async {
+    if (_isModelLoaded) {
+      try {
+        await _channel.invokeMethod('closeModel');
+      } catch (_) {}
+      _isModelLoaded = false;
+    }
+  }
+}

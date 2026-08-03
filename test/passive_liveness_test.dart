@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passive_liveness/passive_liveness.dart';
 
@@ -398,9 +399,32 @@ void main() {
   });
 
   group('PassiveLivenessDetector tests', () {
+    const channel = MethodChannel('com.andikatp.passiveLiveness');
+
+    setUpAll(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+        if (methodCall.method == 'initModel') {
+          return {
+            'inputShape': [1, 3, 128, 128],
+            'isNchw': true,
+            'targetSize': 128,
+          };
+        }
+        if (methodCall.method == 'runInference') {
+          return [3.5, 0.5];
+        }
+        if (methodCall.method == 'closeModel') {
+          return null;
+        }
+        return null;
+      });
+    });
+
     test(
       'EMA tracker initializes as null and resets correctly',
-      () {
+      () async {
         final detector = PassiveLivenessDetector();
 
         expect(detector.emaRealScore, isNull);
@@ -408,8 +432,39 @@ void main() {
 
         detector.resetEma();
         expect(detector.emaRealScore, isNull);
-        detector.dispose();
+        await detector.dispose();
       },
     );
+
+    test('Initializes with mock model bytes and runs detection pipeline', () async {
+      final detector = PassiveLivenessDetector();
+      final dummyBytes = Uint8List.fromList([1, 2, 3, 4]);
+
+      await detector.initialize(modelBytes: dummyBytes);
+      expect(detector.isInitialized, isTrue);
+      expect(detector.isNativeNchw, isTrue);
+      expect(detector.modelTargetSize, equals(128));
+
+      final frameBytes = Uint8List(100 * 100 * 4);
+      final buffer = LivenessImageBuffer(
+        width: 100,
+        height: 100,
+        format: LivenessImageFormat.bgra8888,
+        planes: [
+          LivenessImagePlane(
+            bytes: frameBytes,
+            bytesPerRow: 100 * 4,
+            bytesPerPixel: 4,
+          ),
+        ],
+      );
+
+      final result = await detector.detectLivenessFromBuffer(buffer);
+      expect(result.realLogit, equals(3.5));
+      expect(result.spoofLogit, equals(0.5));
+
+      await detector.dispose();
+      expect(detector.isInitialized, isFalse);
+    });
   });
 }

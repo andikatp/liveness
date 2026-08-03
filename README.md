@@ -4,13 +4,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-flutter%20%7C%20android%20%7C%20ios-blue.svg)](https://pub.dev/packages/passive_liveness)
 
-An ultra-lightweight, high-performance passive face anti-spoofing (liveness) detection package for Flutter powered by **LiteRT (TensorFlow Lite)** edge inference on Android and iOS.
+An ultra-lightweight, high-performance passive face anti-spoofing (liveness) detection package for Flutter powered by **Native TensorFlow Lite** edge inference on Android (Google Play Services) and iOS (`TensorFlowLiteSwift`).
 
 ---
 
 ## Features
 
-- ⚡ **LiteRT Next Hardware Acceleration**: Powered by `flutter_litert` `CompiledModel` with zero-copy hardware acceleration (GPU / NPU / CPU fallback).
+- ⚡ **Native TFLite Inference & Zero-MB Android Footprint**: Uses Google Play Services TFLite on Android (0 MB APK size impact) with GPU acceleration and automatic CPU fallback, and `TensorFlowLiteSwift` on iOS.
 - 🔓 **100% Standalone (No ML Kit Required)**: Works directly out-of-the-box on raw images or camera streams without needing Google ML Kit or third-party face detectors.
 - 📷 **Zero-Copy Camera Stream Processing**: Preprocesses raw Flutter `CameraImage` byte buffers (`NV21` / `YUV420` on Android, `BGRA8888` on iOS) directly to TFLite tensors without main-thread image decoding.
 - 👓 **Glasses Glare Resistance (Asymmetric EMA)**: Uses Asymmetric Exponential Moving Average filtering ($\alpha=0.1$ for score drops, $\alpha=0.4$ for recovery) to resist momentary specular reflections on glasses.
@@ -292,7 +292,11 @@ void dispose() {
 
 ---
 
-## Recent Improvements & Changelog
+### ⚡ Native MethodChannel TFLite Architecture (v0.0.5)
+- **0 MB Android APK Size Impact**: Migrated inference to native platform channels (`com.andikatp.passiveLiveness`) using Google Play Services TFLite (`16.5.0`), eliminating ~40 MB APK/AAB size bloat. Includes GPU acceleration with automatic CPU fallback.
+- **iOS `TensorFlowLiteSwift` Integration**: Native Swift platform channel wrapper (`~> 2.14`) targeting iOS 12.0+.
+- **Zero Third-Party Plugin Dependencies**: Removed `flutter_litert` dependency completely.
+- **100% Pure Dart Heuristics**: Preserved all anti-spoofing heuristic analysis layers in Dart.
 
 ### 🚀 Multi-Layer Anti-Spoofing & Accuracy Upgrades (v0.0.4)
 - **High-Resolution Screen Replay Anti-Spoofing:** Added 2D Laplacian frequency variance and patch focus depth dispersal ($\sigma^2_{\text{PatchLap}}$) to catch high-density OLED/Retina screen replays.

@@ -16,22 +16,17 @@ class LivenessLogger {
     debugPrint('[PASSIVE_LIVENESS] $message');
   }
 
-  /// Log LiteRT model initialization specs.
+  /// Log model initialization specs.
   static void logModelInit({
     required List<int>? inputShape,
     required String tensorType,
     required bool isNativeNchw,
     required int targetSize,
-    required bool isCompiledModel,
-    required bool isIsolateInterpreter,
+    String engineName = 'Native Platform Channel (Play Services / TFLiteSwift)',
   }) {
     if (!enableLogging) return;
     log(
-      'Model Init -> Shape: $inputShape | Type: $tensorType | Format: ${isNativeNchw ? "NCHW [1, 3, $targetSize, $targetSize]" : "NHWC [1, $targetSize, $targetSize, 3]"} | TargetSize: $targetSize | Engine: ${isCompiledModel
-          ? "CompiledModel (Zero-Copy)"
-          : isIsolateInterpreter
-          ? "IsolateInterpreter"
-          : "Classic Interpreter"}',
+      'Model Init -> Shape: $inputShape | Type: $tensorType | Format: ${isNativeNchw ? "NCHW [1, 3, $targetSize, $targetSize]" : "NHWC [1, $targetSize, $targetSize, 3]"} | TargetSize: $targetSize | Engine: $engineName',
     );
   }
 
