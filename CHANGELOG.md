@@ -1,3 +1,7 @@
+## 0.0.6
+
+- **Direct `CameraImage` Liveness API Support (`detectLivenessFromCameraImage`)**: Added direct `CameraImage` evaluation support to `PassiveLivenessDetector`, eliminating redundant developer boilerplate for converting camera frames to `LivenessImageBuffer`.
+
 ## 0.0.5
 
 - **Native MethodChannel TFLite Architecture (~0MB Android APK Impact)**: Migrated model inference from `flutter_litert` Dart FFI to native platform channels (`com.andikatp.passiveLiveness`), reducing plugin binary size footprint from **~40MB** down to almost **0MB**.
