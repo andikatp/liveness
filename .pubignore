@@ -1,8 +1,11 @@
+AGENTS.md
 .agents/
 .dart_tool/
 .idea/
 build/
 face-antispoof-onnx/
+graphify-out/
 skills-lock.json
 *.iml
 test/fixtures/
+test_output*.txt
