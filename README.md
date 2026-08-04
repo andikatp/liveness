@@ -279,7 +279,7 @@ void dispose() {
 
 | Class | Description |
 |---|---|
-| `PassiveLivenessDetector` | Main engine class for initializing the LiteRT model and running inferences. |
+| `PassiveLivenessDetector` | Main engine class for initializing the Native TFLite model and running inferences. |
 | `LivenessFrameProcessor` | Stream processor with motion-gating heuristic and frame throttling. |
 | `FaceProximityGate` | Evaluates face bounding box area coverage and aspect ratio to prevent close-up print attacks. |
 | `LbpHogAnalyzer` | Micro-texture analysis engine for Local Binary Patterns (LBP) and Histogram of Oriented Gradients (HOG). |
@@ -293,10 +293,11 @@ void dispose() {
 ---
 
 ### ⚡ Native MethodChannel TFLite Architecture (v0.0.5)
-- **0 MB Android APK Size Impact**: Migrated inference to native platform channels (`com.andikatp.passiveLiveness`) using Google Play Services TFLite (`16.5.0`), eliminating ~40 MB APK/AAB size bloat. Includes GPU acceleration with automatic CPU fallback.
+- **~0 MB Android APK Size Impact**: Migrated model inference from `flutter_litert` Dart FFI to native platform channels (`com.andikatp.passiveLiveness`), decreasing plugin binary footprint from **~40 MB** down to almost **0 MB**.
+- **Google Play Services TFLite (Android)**: Dynamically uses system-shared TFLite runtime (`play-services-tflite-java:16.5.0` & `play-services-tflite-gpu:16.5.0`), eliminating ~40 MB APK/AAB size bloat with automatic GPU acceleration & CPU fallback.
 - **iOS `TensorFlowLiteSwift` Integration**: Native Swift platform channel wrapper (`~> 2.14`) targeting iOS 12.0+.
-- **Zero Third-Party Plugin Dependencies**: Removed `flutter_litert` dependency completely.
-- **100% Pure Dart Heuristics**: Preserved all anti-spoofing heuristic analysis layers in Dart.
+- **Zero Third-Party Plugin Dependencies**: Removed `flutter_litert` dependency completely for zero-conflict integration.
+- **100% Pure Dart Heuristics**: All anti-spoofing heuristic analysis layers remain 100% in Dart for maximum execution speed and zero main-thread overhead.
 
 ### 🚀 Multi-Layer Anti-Spoofing & Accuracy Upgrades (v0.0.4)
 - **High-Resolution Screen Replay Anti-Spoofing:** Added 2D Laplacian frequency variance and patch focus depth dispersal ($\sigma^2_{\text{PatchLap}}$) to catch high-density OLED/Retina screen replays.
@@ -307,7 +308,7 @@ void dispose() {
 - **Micro-Texture LBP / HOG Engine:** Extracted $256 \times 256$ un-downscaled crops to detect paper inkjet patterns (`printSpoof`) and screen grid alignments (`screenReplaySpoof`).
 - **YCbCr Chrominance Variance Analysis:** Analyzes YUV/YCbCr color space dispersion ($\sigma^2_{CbCr}$) to catch emissive RGB screen replay attacks.
 - **Adaptive Screen Flash Overlay:** Added `LivenessFlashController` and `AdaptiveScreenFlashOverlay` for active photometric stereo assist.
-- **LiteRT Next `CompiledModel` Integration:** Powered by `flutter_litert` `CompiledModel` with zero-copy hardware acceleration (GPU / NPU / CPU fallback).
+- **Native Hardware Acceleration:** Zero-copy hardware acceleration with GPU / NPU / CPU fallback.
 - **Asymmetric EMA Glare Resistance:** Asymmetric Exponential Moving Average ($\alpha=0.1$ for drops, $\alpha=0.4$ for recovery) to prevent glasses reflections from triggering false spoof drops.
 - **Bounding Box Motion Stability Gate:** Bypasses TFLite inference during motion blur.
 - **Edge Pixel Replication (`BORDER_REPLICATE`):** Smooth mirror coordinate clamping (`_reflect101`) to eliminate black border artifacts.

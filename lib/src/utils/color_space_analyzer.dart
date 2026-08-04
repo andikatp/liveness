@@ -29,14 +29,14 @@ class ColorSpaceAnalysisResult {
 /// Evaluates YCbCr / YUV chrominance sub-sampling metrics ($\sigma^2_{CbCr}$)
 /// to detect emissive RGB digital display screen replay attacks.
 class ColorSpaceAnalyzer {
-  /// Upper bound threshold for chrominance variance (default: 146.0). Higher values indicate screen sub-pixel dispersion.
+  /// Upper bound threshold for chrominance variance (default: 140.0). Higher values indicate screen sub-pixel dispersion.
   final double maxVarianceThreshold;
 
   /// Lower bound threshold for chrominance variance (default: 0.5). Extremely low values indicate flat monochrome / synthetic photos.
   final double minVarianceThreshold;
 
   const ColorSpaceAnalyzer({
-    this.maxVarianceThreshold = 146.0,
+    this.maxVarianceThreshold = 140.0,
     this.minVarianceThreshold = 0.5,
   });
 

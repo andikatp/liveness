@@ -13,6 +13,8 @@ void main() {
   late PassiveLivenessDetector detector;
   final fixturesDir = Directory('test/fixtures');
 
+  List<double> mockLogits = [3.5, 0.5];
+
   setUpAll(() async {
     const channel = MethodChannel('com.andikatp.passiveLiveness');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -25,7 +27,7 @@ void main() {
         };
       }
       if (methodCall.method == 'runInference') {
-        return [3.5, 0.5];
+        return mockLogits;
       }
       if (methodCall.method == 'closeModel') {
         return null;
@@ -67,21 +69,35 @@ void main() {
       final fileName = file.path.split('/').last;
       print('--- Inspecting File: $fileName ---');
       detector.resetEma();
+      mockLogits = [3.5, 0.5]; // Test heuristic override when neural model predicts REAL
       final bytes = await file.readAsBytes();
 
       FaceBoundingBox? bbox;
       if (fileName == 'download-real.jpg') {
         // Full resolution 3024x4032 camera image: frame center face region
         bbox = const FaceBoundingBox(x: 400, y: 400, width: 2200, height: 2600);
-      } else if (fileName.toLowerCase() == 'download-real6.jpg') {
+      } else if (fileName.toLowerCase().contains('real6')) {
         // Real6 raw is 1737x3088. Provide a center face bounding box to avoid background chrominance variance.
         bbox = const FaceBoundingBox(x: 468, y: 1144, width: 800, height: 800);
+      } else if (fileName.toLowerCase() == 'spoof4.jpeg') {
+        // Spoof4 raw is 1152x2560. Provide center face bounding box for accurate heuristic crop analysis.
+        bbox = const FaceBoundingBox(x: 176, y: 680, width: 800, height: 1000);
       }
 
       final result = await detector.detectLivenessFromImageBytes(
         bytes,
         boundingBox: bbox,
       );
+
+      if (fileName.toLowerCase().contains('spoof4')) {
+        print('=== DETAILED INSPECTION FOR SPOOF4.JPEG ===');
+        print('With bbox: isReal=${result.isReal}, status=${result.status}, realProb=${result.realScore.toStringAsFixed(4)}');
+        print('Metrics: LBP=${result.lbpUniformityScore?.toStringAsFixed(4)}, HOG=${result.hogGridDominance?.toStringAsFixed(4)}, ChromVar=${result.chrominanceVariance?.toStringAsFixed(2)}');
+
+        final fullFrameResult = await detector.detectLivenessFromImageBytes(bytes, boundingBox: null);
+        print('Full Frame (no bbox): isReal=${fullFrameResult.isReal}, status=${fullFrameResult.status}, realProb=${fullFrameResult.realScore.toStringAsFixed(4)}');
+        print('Full Frame Metrics: LBP=${fullFrameResult.lbpUniformityScore?.toStringAsFixed(4)}, HOG=${fullFrameResult.hogGridDominance?.toStringAsFixed(4)}, ChromVar=${fullFrameResult.chrominanceVariance?.toStringAsFixed(2)}');
+      }
 
       print('Neural Model Score:');
       print('  Real Logit: ${result.realLogit.toStringAsFixed(4)}');
@@ -104,7 +120,7 @@ void main() {
         expect(
           result.isReal,
           isFalse,
-          reason: 'Expected $fileName to be classified as SPOOF',
+          reason: 'Expected $fileName to be classified as SPOOF (heuristics must override neural real logit)',
         );
       }
 

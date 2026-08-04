@@ -29,7 +29,7 @@ class HighResScreenAnalysisResult {
 /// Evaluates 2D Laplacian frequency variance, patch focus depth dispersal,
 /// and specular screen reflections to detect high-resolution OLED/Retina screen replay attacks.
 class HighResScreenAnalyzer {
-  /// Minimum relative patch Laplacian dispersal (CV = std / mean) for a genuine 3D face (default: 0.30).
+  /// Minimum relative patch Laplacian dispersal (CV = std / mean) for a genuine 3D face (default: 0.35).
   /// Values below this indicate extremely flat 2D screen focal planes.
   /// This is intentionally conservative to avoid false positives on real faces.
   final double minPatchDispersalThreshold;
@@ -39,7 +39,7 @@ class HighResScreenAnalyzer {
   final double maxSpecularRatioThreshold;
 
   const HighResScreenAnalyzer({
-    this.minPatchDispersalThreshold = 0.30,
+    this.minPatchDispersalThreshold = 0.35,
     this.maxSpecularRatioThreshold = 0.08,
   });
 

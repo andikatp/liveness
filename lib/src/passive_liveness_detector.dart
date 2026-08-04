@@ -316,9 +316,10 @@ class PassiveLivenessDetector {
 
       final isStrongNeuralReal = currentRealProb >= 0.70;
 
-      // Only chrominance variance (isScreenReplaySpoof) is used as a hard override.
-      // All other heuristics require multi-factor agreement.
+      // Chrominance variance (isScreenReplaySpoof) and 2D flat screen focus (isHighResScreenSpoof)
+      // act as primary screen replay indicators to catch high-resolution OLED screen attacks.
       if (isScreenReplaySpoof ||
+          isHighResScreenSpoof ||
           (isStrongNeuralReal && heuristicSpoofCount >= 2) ||
           (!isStrongNeuralReal && heuristicSpoofCount >= 1)) {
         if (isPrintSpoof &&

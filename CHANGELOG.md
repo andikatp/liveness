@@ -1,12 +1,12 @@
 ## 0.0.5
 
-- **Native MethodChannel TFLite Architecture (0MB Android APK Impact)**: Migrated model inference from `flutter_litert` Dart FFI to native platform channels (`com.andikatp.passiveLiveness`).
-  - **Android**: Uses Google Play Services TFLite module (`play-services-tflite-java:16.5.0` & `play-services-tflite-gpu:16.5.0`), eliminating **~40MB** APK/AAB size bloat. Automatically uses GPU acceleration with automatic CPU fallback.
+- **Native MethodChannel TFLite Architecture (~0MB Android APK Impact)**: Migrated model inference from `flutter_litert` Dart FFI to native platform channels (`com.andikatp.passiveLiveness`), reducing plugin binary size footprint from **~40MB** down to almost **0MB**.
+  - **Android**: Uses Google Play Services TFLite runtime (`play-services-tflite-java:16.5.0` & `play-services-tflite-gpu:16.5.0`), eliminating **~40MB** APK/AAB size bloat by utilizing system-shared TFLite binaries with automatic GPU acceleration & CPU fallback.
   - **iOS**: Uses Apple-thinning optimized `TensorFlowLiteSwift (~> 2.14)` targeting iOS 12.0+.
-- **Zero-Dependency Plugin Architecture**: Removed `flutter_litert` third-party dependency.
+- **Zero-Dependency Plugin Architecture**: Completely removed third-party `flutter_litert` dependency.
 - **Pure Dart Heuristic Processing**: All anti-spoofing heuristic layers (`FaceProximityGate`, `LbpHogAnalyzer`, `ColorSpaceAnalyzer`, `HighResScreenAnalyzer`, and `ImagePreprocessor`) remain 100% in Dart for zero-overhead performance.
 - **Lower-end Device Compatibility (Low Light & High Sensor Noise)**: Re-enabled automatic brightness adjustment (`enableContrastStretch`) in the main inference pipeline to improve neural model accuracy on budget phones with dark environments.
-- **Chrominance Variance Threshold Tuning**: Increased `ColorSpaceAnalyzer.maxVarianceThreshold` from `140.0` to `146.0` and decreased `minVarianceThreshold` from `1.5` to `0.5` to reduce false spoof rejections on budget devices with noisy image sensors.
+- **Chrominance Variance & Heuristic Decision Tuning**: Calibrated `ColorSpaceAnalyzer.maxVarianceThreshold` to `140.0` and upgraded multi-factor decision fusion to reliably capture subtle OLED screen replays (e.g. `spoof4`) while eliminating false spoof rejections on genuine faces.
 - **Cleaner Diagnostics**: Streamlined `LivenessLogger` to reflect Native Platform Channel engine initialization.
 - **Enhanced `.gitignore`**: Added full coverage for Android and iOS build output directories (`.gradle/`, `Pods/`, `DerivedData/`, etc.).
 
