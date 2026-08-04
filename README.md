@@ -149,27 +149,9 @@ import 'package:camera/camera.dart';
 import 'package:passive_liveness/passive_liveness.dart';
 
 void processCameraFrame(CameraImage cameraImage, int sensorRotation) async {
-  final buffer = LivenessImageBuffer(
-    width: cameraImage.width,
-    height: cameraImage.height,
-    format: cameraImage.format.group == ImageFormatGroup.bgra8888
-        ? LivenessImageFormat.bgra8888
-        : (cameraImage.planes.length == 1
-            ? LivenessImageFormat.nv21
-            : LivenessImageFormat.yuv420),
-    planes: cameraImage.planes
-        .map((p) => LivenessImagePlane(
-              bytes: p.bytes,
-              bytesPerRow: p.bytesPerRow,
-              bytesPerPixel: p.bytesPerPixel,
-            ))
-        .toList(),
-  );
-
-  // All anti-spoofing protection layers (Proximity Gate, Micro-Texture,
-  // YCbCr Color Space, 2D Laplacian High-Res Screen Analysis) are ENABLED BY DEFAULT!
-  final LivenessResult result = await detector.detectLivenessFromBuffer(
-    buffer,
+  // Pass CameraImage directly — no manual buffer mapping required!
+  final LivenessResult result = await detector.detectLivenessFromCameraImage(
+    cameraImage,
     rotation: sensorRotation,
   );
 
@@ -183,11 +165,11 @@ void processCameraFrame(CameraImage cameraImage, int sensorRotation) async {
 
 #### Option B: Advanced (With ML Kit Face Detector)
 ```dart
-  // Pass faceRect from ML Kit
+  // Pass faceRect from ML Kit directly with CameraImage
   final boundingBox = faceRect != null ? FaceBoundingBox.fromRect(faceRect) : null;
 
-  final LivenessResult result = await detector.detectLivenessFromBuffer(
-    buffer,
+  final LivenessResult result = await detector.detectLivenessFromCameraImage(
+    cameraImage,
     boundingBox: boundingBox,
     rotation: sensorRotation,
     isRotatedBoundingBox: Platform.isAndroid,
@@ -206,13 +188,10 @@ final processor = LivenessFrameProcessor(
   throttleInterval: const Duration(milliseconds: 150),
 );
 
-// In your camera stream listener:
-final LivenessResult? result = await processor.processBufferFrame(
-  buffer,
+// In your camera stream listener — pass CameraImage directly:
+final LivenessResult? result = await processor.processCameraFrame(
+  cameraImage,
   rotation: sensorRotation,
-  enableProximityGate: true,
-  enableTextureAnalysis: true,
-  enableColorSpaceAnalysis: true,
 );
 ```
 

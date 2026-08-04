@@ -72,6 +72,28 @@ class LivenessFrameProcessor {
     return isStable;
   }
 
+  /// Processes a single camera frame directly from a Flutter `CameraImage` instance.
+  Future<LivenessResult?> processCameraFrame(
+    dynamic cameraImage, {
+    FaceBoundingBox? boundingBox,
+    int rotation = 0,
+    bool? isRotatedBoundingBox,
+    double threshold = 0.0,
+    double expansionFactor = 1.5,
+    bool enableProximityGate = true,
+  }) {
+    final buffer = LivenessImageBuffer.fromCameraImage(cameraImage);
+    return processBufferFrame(
+      buffer,
+      boundingBox: boundingBox,
+      rotation: rotation,
+      isRotatedBoundingBox: isRotatedBoundingBox,
+      threshold: threshold,
+      expansionFactor: expansionFactor,
+      enableProximityGate: enableProximityGate,
+    );
+  }
+
   /// Processes a single frame from a raw camera [LivenessImageBuffer].
   ///
   /// Throttles frame evaluation frequency according to [throttleInterval] to prevent UI lag,

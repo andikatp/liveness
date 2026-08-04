@@ -146,6 +146,38 @@ class PassiveLivenessDetector {
   /// - [enableTextureAnalysis]: Enable LBP halftone print noise & glasses-debiased HOG grid analysis. Default `true`.
   /// - [enableColorSpaceAnalysis]: Enable YCbCr sub-pixel chrominance variance ($\sigma^2_{CbCr}$) screen replay analysis. Default `true`.
   /// - [enableHighResScreenAnalysis]: Enable 2D Laplacian focus depth dispersal & specular glass highlight analysis for OLED/4K screens. Default `true`.
+  
+  /// Evaluates liveness directly from a Flutter `CameraImage` instance.
+  Future<LivenessResult> detectLivenessFromCameraImage(
+    dynamic cameraImage, {
+    FaceBoundingBox? boundingBox,
+    int rotation = 0,
+    bool? isRotatedBoundingBox,
+    double threshold = 0.0,
+    double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    double emaAlpha = defaultEmaAlpha,
+    bool enableProximityGate = true,
+    bool enableTextureAnalysis = true,
+    bool enableColorSpaceAnalysis = true,
+    bool enableHighResScreenAnalysis = true,
+  }) {
+    final buffer = LivenessImageBuffer.fromCameraImage(cameraImage);
+    return detectLivenessFromBuffer(
+      buffer,
+      boundingBox: boundingBox,
+      rotation: rotation,
+      isRotatedBoundingBox: isRotatedBoundingBox,
+      threshold: threshold,
+      expansionFactor: expansionFactor,
+      emaAlpha: emaAlpha,
+      enableProximityGate: enableProximityGate,
+      enableTextureAnalysis: enableTextureAnalysis,
+      enableColorSpaceAnalysis: enableColorSpaceAnalysis,
+      enableHighResScreenAnalysis: enableHighResScreenAnalysis,
+    );
+  }
+
+  /// Evaluates a raw [LivenessImageBuffer] for face liveness and spoof attacks.
   Future<LivenessResult> detectLivenessFromBuffer(
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
