@@ -290,6 +290,15 @@ class PassiveLivenessDetector {
       isScreenReplaySpoof = colorResult.isScreenReplaySpoof;
     }
 
+    // Flat paper print photo attack detection (low chrominance variance + LBP degradation):
+    if (lbpRatio != null &&
+        lbpRatio < 0.250 &&
+        chrominanceVar != null &&
+        chrominanceVar >= 50.0 &&
+        chrominanceVar < 80.0) {
+      isPrintSpoof = true;
+    }
+
     // 4. 2D Laplacian Frequency & Focus Depth Analysis for High-Res Screens
     bool isHighResScreenSpoof = false;
     double? laplacianVar;
@@ -316,16 +325,16 @@ class PassiveLivenessDetector {
     // Digital displays emit sub-pixel high-frequency energy combined with chrominance dispersion.
     final isEmissiveScreenSpoof =
         chrominanceVar != null &&
-        chrominanceVar >= 90.0 &&
-        ((laplacianVar != null && laplacianVar >= 3500.0) ||
+        chrominanceVar >= 80.0 &&
+        ((laplacianVar != null && laplacianVar >= 2500.0) ||
             (specularRatio != null &&
-                specularRatio >= 0.0068 &&
+                specularRatio >= 0.0050 &&
                 laplacianVar != null &&
-                laplacianVar >= 3000.0));
+                laplacianVar >= 2000.0));
 
     final isBorderlineScreenReplaySpoof =
         chrominanceVar != null &&
-        ((chrominanceVar >= 95.0 && lbpRatio != null && lbpRatio < 0.31) ||
+        ((chrominanceVar >= 110.0 && lbpRatio != null && lbpRatio < 0.31) ||
             (chrominanceVar >= 100.0 &&
                 hogDominance != null &&
                 hogDominance >= 0.17 &&
@@ -413,17 +422,37 @@ class PassiveLivenessDetector {
       if (isEmissiveScreenSpoof) heuristicSpoofCount++;
       if (isBorderlineScreenReplaySpoof) heuristicSpoofCount++;
 
+      final isNearCertainNeuralReal = currentRealProb >= 0.999;
+      final isVeryStrongNeuralReal = currentRealProb >= 0.90;
       final isStrongNeuralReal = currentRealProb >= 0.70;
 
-      // Screen replay (isScreenReplaySpoof: chrominance variance), high-res screen glare
-      // (isHighResScreenSpoof: specular reflections), and emissive screen display re-photography
-      // act as hard overrides because emissive digital displays can fool neural models into predicting high real scores (e.g. 0.89-0.99).
-      if (isScreenReplaySpoof ||
-          isHighResScreenSpoof ||
+      // Hard physical screen overrides:
+      // High chrominance variance (isScreenReplaySpoof: chrominanceVar >= 160.0),
+      // 2D flat focal plane (isHighResScreenSpoof: patchDispersal < 0.35),
+      // and emissive screen sub-pixel frequency spikes / glass glare highlights (isEmissiveScreenSpoof)
+      // represent physical properties of digital displays that 3D real faces never possess.
+      final isHardScreenOverride =
+          isScreenReplaySpoof ||
           isEmissiveScreenSpoof ||
-          isBorderlineScreenReplaySpoof ||
-          (isStrongNeuralReal && heuristicSpoofCount >= 2) ||
-          (!isStrongNeuralReal && heuristicSpoofCount >= 1)) {
+          (isHighResScreenSpoof && !isNearCertainNeuralReal);
+
+      // Soft borderline statistical indicators require either:
+      // 1) A hard physical screen indicator, OR
+      // 2) Corroboration between at least 2 heuristic signals, OR
+      // 3) Lower neural real confidence (currentRealProb < 0.90).
+      final isSoftBorderlineOverride =
+          isBorderlineScreenReplaySpoof &&
+          !isNearCertainNeuralReal &&
+          (!isVeryStrongNeuralReal || heuristicSpoofCount >= 2);
+
+      if (isHardScreenOverride ||
+          isSoftBorderlineOverride ||
+          (!isNearCertainNeuralReal &&
+              isStrongNeuralReal &&
+              heuristicSpoofCount >= 2) ||
+          (!isNearCertainNeuralReal &&
+              !isStrongNeuralReal &&
+              heuristicSpoofCount >= 1)) {
         if (isPrintSpoof &&
             !isHighResScreenSpoof &&
             !isEmissiveScreenSpoof &&
