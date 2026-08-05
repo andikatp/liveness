@@ -18,11 +18,27 @@ class HighResScreenAnalysisResult {
   /// Whether high-resolution screen replay characteristics were detected.
   final bool isHighResScreenSpoof;
 
+  /// Laplacian variance of the center face region (inner 50% crop).
+  final double faceLaplacianVariance;
+
+  /// Laplacian variance of the outer background ring region.
+  final double backgroundLaplacianVariance;
+
+  /// Whether the image exhibits 2D flat focal plane characteristics.
+  ///
+  /// Real 3D faces have depth-of-field differences between face and background,
+  /// producing a large Laplacian delta. Screens and prints are uniformly focused
+  /// with near-zero delta.
+  final bool is2DFlatSpoof;
+
   const HighResScreenAnalysisResult({
     required this.laplacianVariance,
     required this.patchLaplacianDispersal,
     required this.specularHighlightRatio,
     required this.isHighResScreenSpoof,
+    this.faceLaplacianVariance = 0.0,
+    this.backgroundLaplacianVariance = 0.0,
+    this.is2DFlatSpoof = false,
   });
 }
 
@@ -55,6 +71,9 @@ class HighResScreenAnalyzer {
         patchLaplacianDispersal: 10.0,
         specularHighlightRatio: 0.0,
         isHighResScreenSpoof: false,
+        faceLaplacianVariance: 0.0,
+        backgroundLaplacianVariance: 0.0,
+        is2DFlatSpoof: false,
       );
     }
 
@@ -94,6 +113,9 @@ class HighResScreenAnalyzer {
         patchLaplacianDispersal: 10.0,
         specularHighlightRatio: 0.0,
         isHighResScreenSpoof: false,
+        faceLaplacianVariance: 0.0,
+        backgroundLaplacianVariance: 0.0,
+        is2DFlatSpoof: false,
       );
     }
 
@@ -199,11 +221,108 @@ class HighResScreenAnalyzer {
         patchDispersal < minPatchDispersalThreshold ||
         specularRatio > maxSpecularRatioThreshold;
 
+    // 2D Flatness Check: Face (center 50%) vs Background (outer ring) Laplacian delta.
+    // Real 3D faces have depth-of-field differences; screens/prints are uniformly focused.
+    final centerStartX = width ~/ 4;
+    final centerStartY = height ~/ 4;
+    final centerEndX = width * 3 ~/ 4;
+    final centerEndY = height * 3 ~/ 4;
+
+    double faceLapSum = 0.0;
+    int faceLapCount = 0;
+    double bgLapSum = 0.0;
+    int bgLapCount = 0;
+
+    for (int y = 1; y < height - 1; y++) {
+      final yOffset = y * width;
+      for (int x = 1; x < width - 1; x++) {
+        final center = grayBytes[yOffset + x];
+        final left = grayBytes[yOffset + x - 1];
+        final right = grayBytes[yOffset + x + 1];
+        final top = grayBytes[(y - 1) * width + x];
+        final bottom = grayBytes[(y + 1) * width + x];
+        final lap = (4 * center - left - right - top - bottom).toDouble();
+
+        final isCenter = x >= centerStartX &&
+            x < centerEndX &&
+            y >= centerStartY &&
+            y < centerEndY;
+        if (isCenter) {
+          faceLapSum += lap;
+          faceLapCount++;
+        } else {
+          bgLapSum += lap;
+          bgLapCount++;
+        }
+      }
+    }
+
+    double faceLapVar = 0.0;
+    double bgLapVar = 0.0;
+
+    if (faceLapCount > 0) {
+      final faceMean = faceLapSum / faceLapCount;
+      double faceVarAccum = 0.0;
+      for (int y = math.max(1, centerStartY); y < math.min(height - 1, centerEndY); y++) {
+        final yOffset = y * width;
+        for (int x = math.max(1, centerStartX); x < math.min(width - 1, centerEndX); x++) {
+          final c = grayBytes[yOffset + x];
+          final l = grayBytes[yOffset + x - 1];
+          final r = grayBytes[yOffset + x + 1];
+          final t = grayBytes[(y - 1) * width + x];
+          final b = grayBytes[(y + 1) * width + x];
+          final lap = (4 * c - l - r - t - b).toDouble();
+          final diff = lap - faceMean;
+          faceVarAccum += diff * diff;
+        }
+      }
+      faceLapVar = faceVarAccum / faceLapCount;
+    }
+
+    if (bgLapCount > 0) {
+      final bgMean = bgLapSum / bgLapCount;
+      double bgVarAccum = 0.0;
+      for (int y = 1; y < height - 1; y++) {
+        final yOffset = y * width;
+        for (int x = 1; x < width - 1; x++) {
+          final isCenter = x >= centerStartX &&
+              x < centerEndX &&
+              y >= centerStartY &&
+              y < centerEndY;
+          if (isCenter) continue;
+          final c = grayBytes[yOffset + x];
+          final l = grayBytes[yOffset + x - 1];
+          final r = grayBytes[yOffset + x + 1];
+          final t = grayBytes[(y - 1) * width + x];
+          final b = grayBytes[(y + 1) * width + x];
+          final lap = (4 * c - l - r - t - b).toDouble();
+          final diff = lap - bgMean;
+          bgVarAccum += diff * diff;
+        }
+      }
+      bgLapVar = bgVarAccum / bgLapCount;
+    }
+
+    // Compute relative delta between face and background Laplacian variances.
+    // Use the coefficient of variation (normalized difference) to be scale-invariant.
+    final avgLapVar = (faceLapVar + bgLapVar) / 2.0;
+    final lapDelta = (faceLapVar - bgLapVar).abs();
+    final normalizedDelta = avgLapVar > 0.0 ? lapDelta / avgLapVar : 0.0;
+
+    // 2D flat planes (screens, prints) have extremely low normalizedDelta (< 0.08)
+    // combined with uniform patch dispersal (< 0.30) or high laplacian variance (> 2500).
+    final is2DFlatSpoof =
+        (normalizedDelta < 0.08 && patchDispersal < 0.30 && varLap > 500.0) ||
+        (normalizedDelta < 0.04 && varLap > 2000.0);
+
     return HighResScreenAnalysisResult(
       laplacianVariance: varLap,
       patchLaplacianDispersal: patchDispersal,
       specularHighlightRatio: specularRatio,
       isHighResScreenSpoof: isHighResScreenSpoof,
+      faceLaplacianVariance: faceLapVar,
+      backgroundLaplacianVariance: bgLapVar,
+      is2DFlatSpoof: is2DFlatSpoof,
     );
   }
 }

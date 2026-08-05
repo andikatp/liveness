@@ -18,11 +18,22 @@ class ColorSpaceAnalysisResult {
   /// Whether the chrominance distribution indicates a digital screen replay attack.
   final bool isScreenReplaySpoof;
 
+  /// HSV Saturation channel variance.
+  ///
+  /// Screens emit additive RGB light causing unnatural saturation spikes
+  /// in backlight scatter, unlike human skin which reflects subtractive light.
+  final double saturationVariance;
+
+  /// Whether emissive saturation spike characteristics were detected.
+  final bool isEmissiveSaturationSpoof;
+
   const ColorSpaceAnalysisResult({
     required this.chrominanceVariance,
     required this.meanCb,
     required this.meanCr,
     required this.isScreenReplaySpoof,
+    this.saturationVariance = 0.0,
+    this.isEmissiveSaturationSpoof = false,
   });
 }
 
@@ -54,6 +65,8 @@ class ColorSpaceAnalyzer {
         meanCb: 128.0,
         meanCr: 128.0,
         isScreenReplaySpoof: false,
+        saturationVariance: 0.0,
+        isEmissiveSaturationSpoof: false,
       );
     }
 
@@ -75,6 +88,7 @@ class ColorSpaceAnalyzer {
 
     double sumCb = 0.0;
     double sumCr = 0.0;
+    double sumSat = 0.0;
     int sampleCount = 0;
 
     // Subsample every 4th pixel for high performance without loss of statistical accuracy
@@ -84,6 +98,7 @@ class ColorSpaceAnalyzer {
         ((width + step - 1) ~/ step) * ((height + step - 1) ~/ step);
     final cbList = Float64List(maxSamples);
     final crList = Float64List(maxSamples);
+    final satList = Float64List(maxSamples);
 
     if (isBgra || isRgba) {
       final plane0 = buffer.planes[0].bytes;
@@ -106,10 +121,17 @@ class ColorSpaceAnalyzer {
             final cb = 128.0 - 0.168736 * r - 0.331264 * g + 0.5 * b;
             final cr = 128.0 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
+            // HSV Saturation: S = (max - min) / max  (0..1 range)
+            final maxC = math.max(r, math.max(g, b));
+            final minC = math.min(r, math.min(g, b));
+            final sat = maxC > 0.0 ? (maxC - minC) / maxC : 0.0;
+
             cbList[sampleCount] = cb;
             crList[sampleCount] = cr;
+            satList[sampleCount] = sat;
             sumCb += cb;
             sumCr += cr;
+            sumSat += sat;
             sampleCount++;
           }
         }
@@ -171,35 +193,51 @@ class ColorSpaceAnalyzer {
         meanCb: 128.0,
         meanCr: 128.0,
         isScreenReplaySpoof: false,
+        saturationVariance: 0.0,
+        isEmissiveSaturationSpoof: false,
       );
     }
 
     final meanCb = sumCb / sampleCount;
     final meanCr = sumCr / sampleCount;
+    final meanSat = sumSat / sampleCount;
 
     double varCb = 0.0;
     double varCr = 0.0;
+    double varSat = 0.0;
 
     for (int i = 0; i < sampleCount; i++) {
       final diffCb = cbList[i] - meanCb;
       final diffCr = crList[i] - meanCr;
+      final diffSat = satList[i] - meanSat;
       varCb += diffCb * diffCb;
       varCr += diffCr * diffCr;
+      varSat += diffSat * diffSat;
     }
 
     varCb /= sampleCount;
     varCr /= sampleCount;
+    varSat /= sampleCount;
 
     final totalChrominanceVar = varCb + varCr;
     final isScreenReplaySpoof =
         totalChrominanceVar > maxVarianceThreshold ||
         totalChrominanceVar < minVarianceThreshold;
 
+    // Emissive saturation spoof: screens emit additive RGB backlight that
+    // creates higher saturation variance (varSat >= 0.045) combined with
+    // elevated chrominance variance (>= 110.0), unlike human skin which
+    // reflects subtractive light (typically varSat < 0.035 in room lighting).
+    final isEmissiveSaturationSpoof =
+        varSat >= 0.045 && totalChrominanceVar >= 110.0;
+
     return ColorSpaceAnalysisResult(
       chrominanceVariance: totalChrominanceVar,
       meanCb: meanCb,
       meanCr: meanCr,
       isScreenReplaySpoof: isScreenReplaySpoof,
+      saturationVariance: varSat,
+      isEmissiveSaturationSpoof: isEmissiveSaturationSpoof,
     );
   }
 }

@@ -56,10 +56,10 @@ void main() {
 
     final summaryLines = <String>[];
     summaryLines.add(
-      'FILENAME            | EXPECTED | IS_REAL | STATUS            | CHROM_VAR | LBP_RATIO | HOG_DOM',
+      'FILENAME            | EXPECTED | IS_REAL | STATUS            | CHROM_VAR | LBP_RATIO | HOG_DOM | FLAT_2D | EMISS_SAT | MOIRE',
     );
     summaryLines.add(
-      '--------------------+----------+---------+-------------------+-----------+-----------+---------',
+      '--------------------+----------+---------+-------------------+-----------+-----------+---------+---------+-----------+-------',
     );
 
     for (final file in files) {
@@ -94,9 +94,12 @@ void main() {
       final chromVar = result.chrominanceVariance?.toStringAsFixed(1) ?? 'N/A';
       final lbp = result.lbpUniformityScore?.toStringAsFixed(3) ?? 'N/A';
       final hog = result.hogGridDominance?.toStringAsFixed(3) ?? 'N/A';
+      final lapDelta = result.laplacianDelta?.toStringAsFixed(3) ?? 'N/A';
+      final satVar = result.saturationVariance?.toStringAsFixed(4) ?? 'N/A';
+      final moireHf = result.moireHighFreqRatio?.toStringAsFixed(3) ?? 'N/A';
 
       summaryLines.add(
-        '${fileName.padRight(19)} | ${expected.padRight(8)} | ${isRealStr.padRight(7)} | ${result.status.name.padRight(17)} | ${chromVar.padRight(9)} | ${lbp.padRight(9)} | $hog',
+        '${fileName.padRight(19)} | ${expected.padRight(8)} | ${isRealStr.padRight(7)} | ${result.status.name.padRight(17)} | ${chromVar.padRight(9)} | ${lbp.padRight(9)} | ${hog.padRight(7)} | ${lapDelta.padRight(7)} | ${satVar.padRight(9)} | $moireHf',
       );
 
       // Assert expected liveness result per fixture type

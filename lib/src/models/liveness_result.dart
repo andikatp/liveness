@@ -80,6 +80,22 @@ class LivenessResult {
   /// Chrominance variance ($\sigma^2_{CbCr}$) metric in YCbCr color space.
   final double? chrominanceVariance;
 
+  /// Normalized Laplacian delta between face and background regions ($0.0 \dots \infty$).
+  ///
+  /// Low values ($< 0.15$) indicate a 2D flat focal plane (screen/print).
+  /// High values indicate natural 3D depth-of-field variations.
+  final double? laplacianDelta;
+
+  /// HSV Saturation channel variance ($0.0 \dots 1.0$).
+  ///
+  /// High values ($\ge 0.025$) with elevated chrominance indicate emissive screen backlight.
+  final double? saturationVariance;
+
+  /// High-frequency energy ratio from FFT moiré analysis ($0.0 \dots 1.0$).
+  ///
+  /// High values ($\ge 0.35$) with structural regularity peaks indicate screen moiré.
+  final double? moireHighFreqRatio;
+
   /// Creates a [LivenessResult] containing complete classification metrics.
   const LivenessResult({
     required this.isReal,
@@ -100,6 +116,9 @@ class LivenessResult {
     this.hogGridDominance,
     this.faceAreaRatio,
     this.chrominanceVariance,
+    this.laplacianDelta,
+    this.saturationVariance,
+    this.moireHighFreqRatio,
   }) : rawRealScore = rawRealScore ?? realScore,
        rawSpoofScore = rawSpoofScore ?? spoofScore,
        rawLogitDiff = rawLogitDiff ?? logitDiff,
@@ -131,6 +150,9 @@ class LivenessResult {
     double? hogGridDominance,
     double? faceAreaRatio,
     double? chrominanceVariance,
+    double? laplacianDelta,
+    double? saturationVariance,
+    double? moireHighFreqRatio,
     LivenessStatus? overrideStatus,
   }) {
     final logitDiff = realLogit - spoofLogit;
@@ -163,6 +185,9 @@ class LivenessResult {
       hogGridDominance: hogGridDominance,
       faceAreaRatio: faceAreaRatio,
       chrominanceVariance: chrominanceVariance,
+      laplacianDelta: laplacianDelta,
+      saturationVariance: saturationVariance,
+      moireHighFreqRatio: moireHighFreqRatio,
     );
   }
 
@@ -182,6 +207,9 @@ class LivenessResult {
     if (hogGridDominance != null) 'hogGridDominance': hogGridDominance,
     if (faceAreaRatio != null) 'faceAreaRatio': faceAreaRatio,
     if (chrominanceVariance != null) 'chrominanceVariance': chrominanceVariance,
+    if (laplacianDelta != null) 'laplacianDelta': laplacianDelta,
+    if (saturationVariance != null) 'saturationVariance': saturationVariance,
+    if (moireHighFreqRatio != null) 'moireHighFreqRatio': moireHighFreqRatio,
   };
 
   @override

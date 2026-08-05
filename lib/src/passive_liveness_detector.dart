@@ -11,6 +11,7 @@ import 'models/liveness_result.dart';
 import 'native_liveness_engine.dart';
 import 'utils/color_space_analyzer.dart';
 import 'utils/face_proximity_gate.dart';
+import 'utils/fft_moire_analyzer.dart';
 import 'utils/high_res_screen_analyzer.dart';
 import 'utils/image_preprocessor.dart';
 import 'utils/lbp_hog_analyzer.dart';
@@ -185,6 +186,7 @@ class PassiveLivenessDetector {
     bool enableTextureAnalysis = true,
     bool enableColorSpaceAnalysis = true,
     bool enableHighResScreenAnalysis = true,
+    bool enableMoireAnalysis = true,
   }) {
     final buffer = LivenessImageBuffer.fromCameraImage(cameraImage);
     return detectLivenessFromBuffer(
@@ -199,6 +201,7 @@ class PassiveLivenessDetector {
       enableTextureAnalysis: enableTextureAnalysis,
       enableColorSpaceAnalysis: enableColorSpaceAnalysis,
       enableHighResScreenAnalysis: enableHighResScreenAnalysis,
+      enableMoireAnalysis: enableMoireAnalysis,
     );
   }
 
@@ -215,11 +218,13 @@ class PassiveLivenessDetector {
     bool enableTextureAnalysis = true,
     bool enableColorSpaceAnalysis = true,
     bool enableHighResScreenAnalysis = true,
+    bool enableMoireAnalysis = true,
   }) async {
     final proximityGate = const FaceProximityGate();
     final textureAnalyzer = const LbpHogAnalyzer();
     final colorSpaceAnalyzer = const ColorSpaceAnalyzer();
     final highResScreenAnalyzer = const HighResScreenAnalyzer();
+    final moireAnalyzer = const FftMoireAnalyzer();
     if (!isInitialized) {
       throw StateError(
         'PassiveLivenessDetector is not initialized. Call initialize() first.',
@@ -277,9 +282,11 @@ class PassiveLivenessDetector {
       isScreenGridSpoof = textureResult.isScreenGridSpoof;
     }
 
-    // 3. YCbCr Chrominance Variance Analysis
+    // 3. YCbCr Chrominance Variance & HSV Saturation Analysis
     double? chrominanceVar;
+    double? saturationVar;
     bool isScreenReplaySpoof = false;
+    bool isEmissiveSaturationSpoof = false;
 
     if (enableColorSpaceAnalysis) {
       final colorResult = colorSpaceAnalyzer.analyzeBuffer(
@@ -288,6 +295,8 @@ class PassiveLivenessDetector {
       );
       chrominanceVar = colorResult.chrominanceVariance;
       isScreenReplaySpoof = colorResult.isScreenReplaySpoof;
+      saturationVar = colorResult.saturationVariance;
+      isEmissiveSaturationSpoof = colorResult.isEmissiveSaturationSpoof;
     }
 
     // Flat paper print photo attack detection (low chrominance variance + LBP degradation):
@@ -301,8 +310,10 @@ class PassiveLivenessDetector {
 
     // 4. 2D Laplacian Frequency & Focus Depth Analysis for High-Res Screens
     bool isHighResScreenSpoof = false;
+    bool is2DFlatSpoof = false;
     double? laplacianVar;
     double? specularRatio;
+    double? laplacianDelta;
 
     if (enableHighResScreenAnalysis) {
       final highResCrop = ImagePreprocessor.extractHighResCrop(
@@ -319,6 +330,38 @@ class PassiveLivenessDetector {
       isHighResScreenSpoof = highResResult.isHighResScreenSpoof;
       laplacianVar = highResResult.laplacianVariance;
       specularRatio = highResResult.specularHighlightRatio;
+      is2DFlatSpoof = highResResult.is2DFlatSpoof;
+      laplacianDelta =
+          (highResResult.faceLaplacianVariance +
+                  highResResult.backgroundLaplacianVariance) >
+              0.0
+          ? (highResResult.faceLaplacianVariance -
+                        highResResult.backgroundLaplacianVariance)
+                    .abs() /
+                ((highResResult.faceLaplacianVariance +
+                        highResResult.backgroundLaplacianVariance) /
+                    2.0)
+          : 0.0;
+    }
+
+    // 5. FFT Moiré Pattern Frequency Analysis
+    double? moireHighFreqRatio;
+    bool isMoireSpoof = false;
+
+    if (enableMoireAnalysis) {
+      final highResCrop = ImagePreprocessor.extractHighResCrop(
+        buffer,
+        boundingBox: boundingBox,
+        rotation: rotation,
+        isRotatedBoundingBox: isRotatedBoundingBox,
+      );
+      final moireResult = moireAnalyzer.analyzeGrayscaleCrop(
+        highResCrop,
+        256,
+        256,
+      );
+      moireHighFreqRatio = moireResult.highFrequencyRatio;
+      isMoireSpoof = moireResult.isMoireSpoof;
     }
 
     // Emissive screen replay detection (MacBook / OLED / LCD digital display re-photography):
@@ -331,24 +374,6 @@ class PassiveLivenessDetector {
                 specularRatio >= 0.0050 &&
                 laplacianVar != null &&
                 laplacianVar >= 2000.0));
-
-    final isBorderlineScreenReplaySpoof =
-        chrominanceVar != null &&
-        ((chrominanceVar >= 110.0 && lbpRatio != null && lbpRatio < 0.31) ||
-            (chrominanceVar >= 100.0 &&
-                hogDominance != null &&
-                hogDominance >= 0.17 &&
-                lbpRatio != null &&
-                lbpRatio < 0.34) ||
-            (chrominanceVar >= 145.0 &&
-                hogDominance != null &&
-                hogDominance >= 0.15) ||
-            (chrominanceVar >= 50.0 &&
-                chrominanceVar < 80.0 &&
-                lbpRatio != null &&
-                lbpRatio < 0.25 &&
-                hogDominance != null &&
-                hogDominance >= 0.16));
 
     final effectiveUseNchw = isNativeNchw;
     final effectiveTargetSize = modelTargetSize;
@@ -385,7 +410,35 @@ class PassiveLivenessDetector {
       hogGridDominance: hogDominance,
       faceAreaRatio: faceAreaRatio,
       chrominanceVariance: chrominanceVar,
+      laplacianDelta: laplacianDelta,
+      saturationVariance: saturationVar,
+      moireHighFreqRatio: moireHighFreqRatio,
     );
+
+    final isBorderlineScreenReplaySpoof =
+        chrominanceVar != null &&
+        ((chrominanceVar >= 110.0 &&
+                lbpRatio != null &&
+                lbpRatio < 0.310 &&
+                laplacianDelta != null &&
+                laplacianDelta < 0.300) ||
+            (chrominanceVar >= 100.0 &&
+                hogDominance != null &&
+                hogDominance >= 0.170 &&
+                lbpRatio != null &&
+                lbpRatio < 0.340 &&
+                rawResult.logitDiff < 5.0) ||
+            (laplacianDelta != null &&
+                laplacianDelta < 0.08 &&
+                hogDominance != null &&
+                hogDominance >= 0.200 &&
+                chrominanceVar >= 90.0) ||
+            (chrominanceVar >= 50.0 &&
+                chrominanceVar < 80.0 &&
+                lbpRatio != null &&
+                lbpRatio < 0.25 &&
+                hogDominance != null &&
+                hogDominance >= 0.16));
 
     // Balanced EMA Calculation:
     final currentRealProb = 1.0 / (1.0 + math.exp(spoofLogit - realLogit));
@@ -410,54 +463,26 @@ class PassiveLivenessDetector {
         : LivenessStatus.spoof;
 
     // Multi-Factor Decision Fusion Engine:
-    // Require corroboration between heuristic signals before overriding neural confidence.
-    // No single heuristic metric is reliable enough to override a strong neural real prediction
-    // due to variable camera conditions (auto-exposure, lighting, glasses glare, depth-of-field).
+    // Any calibrated physical spoof indicator overrides neural real score.
     if (calculatedStatus == LivenessStatus.real) {
-      int heuristicSpoofCount = 0;
-      if (isPrintSpoof) heuristicSpoofCount++;
-      if (isScreenGridSpoof) heuristicSpoofCount++;
-      if (isScreenReplaySpoof) heuristicSpoofCount++;
-      if (isHighResScreenSpoof) heuristicSpoofCount++;
-      if (isEmissiveScreenSpoof) heuristicSpoofCount++;
-      if (isBorderlineScreenReplaySpoof) heuristicSpoofCount++;
-
-      final isNearCertainNeuralReal = currentRealProb >= 0.999;
-      final isVeryStrongNeuralReal = currentRealProb >= 0.90;
-      final isStrongNeuralReal = currentRealProb >= 0.70;
-
-      // Hard physical screen overrides:
-      // High chrominance variance (isScreenReplaySpoof: chrominanceVar >= 160.0),
-      // 2D flat focal plane (isHighResScreenSpoof: patchDispersal < 0.35),
-      // and emissive screen sub-pixel frequency spikes / glass glare highlights (isEmissiveScreenSpoof)
-      // represent physical properties of digital displays that 3D real faces never possess.
-      final isHardScreenOverride =
+      final isAnySpoofSignal =
+          isPrintSpoof ||
+          isScreenGridSpoof ||
           isScreenReplaySpoof ||
+          isHighResScreenSpoof ||
           isEmissiveScreenSpoof ||
-          (isHighResScreenSpoof && !isNearCertainNeuralReal);
+          isBorderlineScreenReplaySpoof ||
+          is2DFlatSpoof ||
+          isEmissiveSaturationSpoof ||
+          isMoireSpoof;
 
-      // Soft borderline statistical indicators require either:
-      // 1) A hard physical screen indicator, OR
-      // 2) Corroboration between at least 2 heuristic signals, OR
-      // 3) Lower neural real confidence (currentRealProb < 0.90).
-      final isSoftBorderlineOverride =
-          isBorderlineScreenReplaySpoof &&
-          !isNearCertainNeuralReal &&
-          (!isVeryStrongNeuralReal || heuristicSpoofCount >= 2);
-
-      if (isHardScreenOverride ||
-          isSoftBorderlineOverride ||
-          (!isNearCertainNeuralReal &&
-              isStrongNeuralReal &&
-              heuristicSpoofCount >= 2) ||
-          (!isNearCertainNeuralReal &&
-              !isStrongNeuralReal &&
-              heuristicSpoofCount >= 1)) {
+      if (isAnySpoofSignal) {
         if (isPrintSpoof &&
             !isHighResScreenSpoof &&
             !isEmissiveScreenSpoof &&
             !isScreenGridSpoof &&
-            !isScreenReplaySpoof) {
+            !isScreenReplaySpoof &&
+            !isBorderlineScreenReplaySpoof) {
           calculatedStatus = LivenessStatus.printSpoof;
         } else {
           calculatedStatus = LivenessStatus.screenReplaySpoof;
@@ -484,6 +509,9 @@ class PassiveLivenessDetector {
       hogGridDominance: hogDominance,
       faceAreaRatio: faceAreaRatio,
       chrominanceVariance: chrominanceVar,
+      laplacianDelta: laplacianDelta,
+      saturationVariance: saturationVar,
+      moireHighFreqRatio: moireHighFreqRatio,
     );
 
     LivenessLogger.logInferenceResult(
