@@ -20,7 +20,9 @@ An ultra-lightweight, high-performance passive face anti-spoofing (liveness) det
 - 🛡️ **Multi-Layer Anti-Spoofing Protection Engine**:
   - **Proximity & Aspect Ratio Gate**: Rejects presentation attacks with small cropped photos or extreme lens close-ups ($5\% \le \text{faceAreaRatio} \le 85\%$).
   - **Micro-Texture LBP / HOG Analyzer**: Evaluates un-downscaled $256 \times 256$ face crops to detect inkjet paper print noise (LBP) and screen sub-pixel grid lines (HOG).
-  - **YCbCr Chrominance Variance Analysis**: Inspects $Cb/Cr$ sub-pixel color space dispersion ($\sigma^2_{CbCr}$) to separate digital LCD/OLED screen replays from natural skin reflectance.
+  - **YCbCr Chrominance & HSV Saturation Analysis**: Inspects $Cb/Cr$ sub-pixel color space dispersion ($\sigma^2_{CbCr}$) and HSV saturation variance to separate digital LCD/OLED/Retina screen replays from natural skin reflectance.
+  - **2D Laplacian Depth-of-Field Flatness Check**: Compares center face focus vs outer background region to identify flat 2D focal planes ($\Delta < 0.08$).
+  - **Fast 2D Radix-2 FFT Moiré Analyzer**: Pure Dart Cooley-Tukey FFT algorithm ($O(n \log n)$) to detect high-frequency sub-pixel display grid peaks ($\text{regularity} \ge 25.0$) beyond 60% Nyquist radius with zero package size impact.
   - **Adaptive Screen Flash (Active Photometric Stereo)**: Brief high-brightness screen flash UI overlay (`LivenessFlashController` & `AdaptiveScreenFlashOverlay`) to verify 3D skin reflectance bounce.
 
 ---
@@ -270,6 +272,14 @@ void dispose() {
 | `LivenessResult` | Detailed result containing `isReal`, `status`, `realScore`, `lbpUniformityScore`, `hogGridDominance`, `chrominanceVariance`, and `inferenceTime`. |
 
 ---
+
+### 🛡️ Upgraded Multi-Modal Anti-Spoofing & Decision Fusion (v0.0.7)
+> *Note: Passive anti-spoofing is a continuous cat-and-mouse game. While no single passive heuristic is 100% infallible against every possible high-end display in every extreme lighting condition, spoofing is significantly harder now!*
+
+- **2D Laplacian Depth-of-Field Flatness Check**: Evaluates Laplacian variance delta between center face crop ($\sigma^2_{\text{Face}}$) vs outer background ($\sigma^2_{\text{Background}}$) to flag flat 2D focal planes ($\Delta < 0.08$).
+- **Emissive Saturation Spikes (HSV Analysis)**: Analyzes Saturation ($S$) channel variance ($\text{varSat} \ge 0.045$) relative to Hue ($H$) to detect additive RGB screen backlight scatter.
+- **Fast Radix-2 FFT Moiré Analyzer**: Pure Dart Cooley-Tukey FFT algorithm ($O(n \log n)$) measuring high-frequency sub-pixel display grid peaks ($\text{regularity} \ge 25.0$) beyond 60% Nyquist radius. Zero binary bloat!
+- **Calibrated Decision Fusion Engine**: Multi-factor decision override rules reliably catch high-res OLED / Retina / MacBook screen replays (including low-brightness screen photos) while protecting genuine live face selfies under indoor lighting.
 
 ### ⚡ Native MethodChannel TFLite Architecture (v0.0.5)
 - **~0 MB Android APK Size Impact**: Migrated model inference from `flutter_litert` Dart FFI to native platform channels (`com.andikatp.passiveLiveness`), decreasing plugin binary footprint from **~40 MB** down to almost **0 MB**.

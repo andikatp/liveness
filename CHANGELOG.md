@@ -1,3 +1,12 @@
+## 0.0.7
+
+- **Upgraded Multi-Modal Anti-Spoofing Heuristics & Decision Fusion**: Enhanced resilience against high-resolution OLED / Retina / MacBook screen replay attacks without increasing package size or native binary footprint. (Look, passive liveness is never 100% perfect, but it's significantly harder to spoof now!).
+  - **2D Flatness Check (`is2DFlatSpoof`)**: Evaluates Laplacian depth-of-field variance delta between center face crop ($\sigma^2_{\text{Face}}$) vs background region ($\sigma^2_{\text{Background}}$) to detect flat 2D focal planes ($\Delta < 0.08$).
+  - **Emissive Saturation Spikes (`isEmissiveSaturationSpoof`)**: Converted color space crops to HSV to analyze Saturation ($S$) channel variance ($\text{varSat} \ge 0.045$) relative to Hue, identifying additive RGB display backlight scatter.
+  - **Fast 2D Radix-2 FFT Moiré Analyzer (`FftMoireAnalyzer`)**: Pure Dart-only Cooley-Tukey FFT algorithm ($O(n \log n)$) to detect high-frequency sub-pixel display grid peaks ($\text{regularity} \ge 25.0$) beyond 60% Nyquist radius with zero binary size overhead.
+  - **Calibrated Multi-Factor Decision Fusion Engine**: Re-calibrated decision override rules to reliably catch screen photo attacks (including low-brightness MacBook photos) while protecting genuine live face selfies under indoor lighting.
+  - **Enhanced Debug & Watermark Metrics**: Exposed `laplacianDelta`, `saturationVariance`, and `moireHighFreqRatio` metrics in `LivenessResult` for detailed debugging and watermark logging.
+
 ## 0.0.6
 
 - **Direct `CameraImage` Liveness API Support (`detectLivenessFromCameraImage`)**: Added direct `CameraImage` evaluation support to `PassiveLivenessDetector`, eliminating redundant developer boilerplate for converting camera frames to `LivenessImageBuffer`.

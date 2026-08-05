@@ -61,7 +61,7 @@ class PassiveLivenessPlugin : FlutterPlugin, MethodCallHandler {
                 if (floatArray == null) {
                     result.error("INVALID_ARGUMENT", "Unsupported inputData type: ${rawInput.javaClass.name}", null)
                     return
-                }
+                } 
 
                 runInference(floatArray, result)
             }
@@ -77,21 +77,17 @@ class PassiveLivenessPlugin : FlutterPlugin, MethodCallHandler {
 
     private fun initializeModel(modelBytes: ByteArray, result: Result) {
         val initOptions = TfLiteInitializationOptions.builder()
-            .setEnableGpuDelegateSupport(true)
+            .setEnableGpuDelegateSupport(false)
             .build()
 
         TfLite.initialize(context, initOptions).addOnSuccessListener {
-            TfLiteGpu.isGpuDelegateAvailable(context).addOnSuccessListener { isGpuAvailable ->
-                createInterpreter(modelBytes, isGpuAvailable, result)
-            }.addOnFailureListener {
-                createInterpreter(modelBytes, false, result)
-            }
+            createInterpreter(modelBytes, result)
         }.addOnFailureListener { e ->
             result.error("PLAY_SERVICES_FAILED", "Failed to initialize Google Play Services TFLite: ${e.message}", null)
         }
     }
 
-    private fun createInterpreter(modelBytes: ByteArray, useGpu: Boolean, result: Result) {
+    private fun createInterpreter(modelBytes: ByteArray, result: Result) {
         try {
             val buffer = ByteBuffer.allocateDirect(modelBytes.size).apply {
                 order(ByteOrder.nativeOrder())
@@ -101,11 +97,7 @@ class PassiveLivenessPlugin : FlutterPlugin, MethodCallHandler {
 
             val options = InterpreterApi.Options().apply {
                 setRuntime(InterpreterApi.Options.TfLiteRuntime.FROM_SYSTEM_ONLY)
-                if (useGpu) {
-                    addDelegateFactory(GpuDelegateFactory())
-                } else {
-                    setNumThreads(2)
-                }
+                setNumThreads(4)
             }
 
             val newInterpreter = InterpreterApi.create(buffer, options)
@@ -131,12 +123,7 @@ class PassiveLivenessPlugin : FlutterPlugin, MethodCallHandler {
             )
             result.success(response)
         } catch (e: Exception) {
-            if (useGpu) {
-                android.util.Log.w("PassiveLivenessPlugin", "GPU Interpreter creation failed: ${e.message}, falling back to CPU", e)
-                createInterpreter(modelBytes, false, result)
-            } else {
-                result.error("INIT_FAILED", "Failed to create TFLite Interpreter: ${e.message}", null)
-            }
+            result.error("INIT_FAILED", "Failed to create TFLite Interpreter: ${e.message}", null)
         }
     }
 
