@@ -109,6 +109,7 @@ class ImagePreprocessor {
     final hw = targetSize * targetSize;
 
     final isBgra = buffer.format == LivenessImageFormat.bgra8888;
+    final isRgba = buffer.format == LivenessImageFormat.rgba8888;
 
     final Uint8List plane0 = buffer.planes[0].bytes;
     final int p0Stride = buffer.planes[0].bytesPerRow;
@@ -197,13 +198,13 @@ class ImagePreprocessor {
 
             final int srcX = _reflect101(rx, rawW - 1);
 
-            if (isBgra) {
+            if (isBgra || isRgba) {
               int r = 0, g = 0, b = 0;
               final offset = yIdxBase + (srcX << 2);
               if (offset + 2 < plane0.length) {
-                b = plane0[offset];
+                b = isBgra ? plane0[offset] : plane0[offset + 2];
                 g = plane0[offset + 1];
-                r = plane0[offset + 2];
+                r = isBgra ? plane0[offset + 2] : plane0[offset];
               }
               sumR += r * w;
               sumG += g * w;
@@ -285,7 +286,7 @@ class ImagePreprocessor {
         }
 
         if (totalWeight > 0) {
-          if (isBgra) {
+          if (isBgra || isRgba) {
             sumR /= totalWeight;
             sumG /= totalWeight;
             sumB /= totalWeight;
@@ -530,7 +531,7 @@ class ImagePreprocessor {
         }
 
         final yVal = 0.299 * r + 0.587 * g + 0.114 * b;
-        
+
         if (yVal > 0) {
           final newY = math.pow(yVal, gamma).toDouble();
           final ratio = newY / (yVal + 1e-7);
@@ -642,6 +643,7 @@ class ImagePreprocessor {
     LivenessImageBuffer buffer, {
     FaceBoundingBox? boundingBox,
     int rotation = 0,
+    bool? isRotatedBoundingBox,
     int targetSize = 256,
   }) {
     final rawW = buffer.width;
@@ -657,16 +659,31 @@ class ImagePreprocessor {
           height: rawH.toDouble(),
         );
 
-    final boxW = math.max(1.0, faceBbox.width);
-    final boxH = math.max(1.0, faceBbox.height);
-    final baseSide = math.max(boxW, boxH);
-    final double cropSize = baseSide; // 1.0x tight center face crop for micro-texture analysis
+    final bool isRotated =
+        isRotatedBoundingBox ??
+        (Platform.isAndroid && (normRotation == 90 || normRotation == 270)) ||
+            ((normRotation == 90 || normRotation == 270) &&
+                (faceBbox.centerY > rawH || faceBbox.centerX > rawW));
+    final effectiveBbox = isRotated
+        ? faceBbox.toRawBufferSpace(rawW, rawH, normRotation)
+        : faceBbox;
 
-    final double cropLeft = (faceBbox.centerX - cropSize / 2.0).toInt().toDouble();
-    final double cropTop = (faceBbox.centerY - cropSize / 2.0).toInt().toDouble();
+    final boxW = math.max(1.0, effectiveBbox.width);
+    final boxH = math.max(1.0, effectiveBbox.height);
+    final baseSide = math.max(boxW, boxH);
+    final double cropSize =
+        baseSide; // 1.0x tight center face crop for micro-texture analysis
+
+    final double cropLeft = (effectiveBbox.centerX - cropSize / 2.0)
+        .toInt()
+        .toDouble();
+    final double cropTop = (effectiveBbox.centerY - cropSize / 2.0)
+        .toInt()
+        .toDouble();
 
     final resultBytes = Uint8List(targetSize * targetSize);
     final isBgra = buffer.format == LivenessImageFormat.bgra8888;
+    final isRgba = buffer.format == LivenessImageFormat.rgba8888;
     final Uint8List plane0 = buffer.planes[0].bytes;
     final int p0Stride = buffer.planes[0].bytesPerRow;
     final double step = cropSize / targetSize;
@@ -703,12 +720,12 @@ class ImagePreprocessor {
         final int srcY = _reflect101(rawY.round(), rawH - 1);
 
         int gray = 0;
-        if (isBgra) {
+        if (isBgra || isRgba) {
           final offset = srcY * p0Stride + (srcX << 2);
           if (offset + 2 < plane0.length) {
-            final b = plane0[offset];
+            final b = isBgra ? plane0[offset] : plane0[offset + 2];
             final g = plane0[offset + 1];
-            final r = plane0[offset + 2];
+            final r = isBgra ? plane0[offset + 2] : plane0[offset];
             gray = (0.299 * r + 0.587 * g + 0.114 * b).round().clamp(0, 255);
           }
         } else {
@@ -725,4 +742,3 @@ class ImagePreprocessor {
     return resultBytes;
   }
 }
-

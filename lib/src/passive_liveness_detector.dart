@@ -65,6 +65,31 @@ class PassiveLivenessDetector {
   /// Whether the detector is initialized and ready for inference.
   bool get isInitialized => _isInitialized && _engine.isModelLoaded;
 
+  FaceBoundingBox? _resolveRawBoundingBox(
+    LivenessImageBuffer buffer, {
+    FaceBoundingBox? boundingBox,
+    required int rotation,
+    bool? isRotatedBoundingBox,
+  }) {
+    if (boundingBox == null) return null;
+
+    final normRotation = ((rotation % 360) + 360) % 360;
+    final isRotated =
+        isRotatedBoundingBox ??
+        (Platform.isAndroid && (normRotation == 90 || normRotation == 270)) ||
+            ((normRotation == 90 || normRotation == 270) &&
+                (boundingBox.centerY > buffer.height ||
+                    boundingBox.centerX > buffer.width));
+
+    return isRotated
+        ? boundingBox.toRawBufferSpace(
+            buffer.width,
+            buffer.height,
+            normRotation,
+          )
+        : boundingBox;
+  }
+
   /// Initialize the native TFLite model for passive liveness detection.
   ///
   /// Loads the model bytes and sends them to the native platform (Android/iOS)
@@ -146,7 +171,7 @@ class PassiveLivenessDetector {
   /// - [enableTextureAnalysis]: Enable LBP halftone print noise & glasses-debiased HOG grid analysis. Default `true`.
   /// - [enableColorSpaceAnalysis]: Enable YCbCr sub-pixel chrominance variance ($\sigma^2_{CbCr}$) screen replay analysis. Default `true`.
   /// - [enableHighResScreenAnalysis]: Enable 2D Laplacian focus depth dispersal & specular glass highlight analysis for OLED/4K screens. Default `true`.
-  
+
   /// Evaluates liveness directly from a Flutter `CameraImage` instance.
   Future<LivenessResult> detectLivenessFromCameraImage(
     dynamic cameraImage, {
@@ -202,12 +227,18 @@ class PassiveLivenessDetector {
     }
 
     final stopwatch = Stopwatch()..start();
+    final rawBoundingBox = _resolveRawBoundingBox(
+      buffer,
+      boundingBox: boundingBox,
+      rotation: rotation,
+      isRotatedBoundingBox: isRotatedBoundingBox,
+    );
 
     // 1. Proximity & Aspect Ratio Gate Check
     double? faceAreaRatio;
-    if (enableProximityGate && boundingBox != null) {
+    if (enableProximityGate && rawBoundingBox != null) {
       final gateResult = proximityGate.evaluate(
-        boundingBox: boundingBox,
+        boundingBox: rawBoundingBox,
         frameWidth: buffer.width,
         frameHeight: buffer.height,
       );
@@ -233,6 +264,7 @@ class PassiveLivenessDetector {
         buffer,
         boundingBox: boundingBox,
         rotation: rotation,
+        isRotatedBoundingBox: isRotatedBoundingBox,
       );
       final textureResult = textureAnalyzer.analyzeGrayscaleCrop(
         highResCrop,
@@ -252,7 +284,7 @@ class PassiveLivenessDetector {
     if (enableColorSpaceAnalysis) {
       final colorResult = colorSpaceAnalyzer.analyzeBuffer(
         buffer,
-        boundingBox: boundingBox,
+        boundingBox: rawBoundingBox,
       );
       chrominanceVar = colorResult.chrominanceVariance;
       isScreenReplaySpoof = colorResult.isScreenReplaySpoof;
@@ -260,12 +292,15 @@ class PassiveLivenessDetector {
 
     // 4. 2D Laplacian Frequency & Focus Depth Analysis for High-Res Screens
     bool isHighResScreenSpoof = false;
+    double? laplacianVar;
+    double? specularRatio;
 
     if (enableHighResScreenAnalysis) {
       final highResCrop = ImagePreprocessor.extractHighResCrop(
         buffer,
         boundingBox: boundingBox,
         rotation: rotation,
+        isRotatedBoundingBox: isRotatedBoundingBox,
       );
       final highResResult = highResScreenAnalyzer.analyzeGrayscaleCrop(
         highResCrop,
@@ -273,7 +308,38 @@ class PassiveLivenessDetector {
         256,
       );
       isHighResScreenSpoof = highResResult.isHighResScreenSpoof;
+      laplacianVar = highResResult.laplacianVariance;
+      specularRatio = highResResult.specularHighlightRatio;
     }
+
+    // Emissive screen replay detection (MacBook / OLED / LCD digital display re-photography):
+    // Digital displays emit sub-pixel high-frequency energy combined with chrominance dispersion.
+    final isEmissiveScreenSpoof =
+        chrominanceVar != null &&
+        chrominanceVar >= 90.0 &&
+        ((laplacianVar != null && laplacianVar >= 3500.0) ||
+            (specularRatio != null &&
+                specularRatio >= 0.0068 &&
+                laplacianVar != null &&
+                laplacianVar >= 3000.0));
+
+    final isBorderlineScreenReplaySpoof =
+        chrominanceVar != null &&
+        ((chrominanceVar >= 95.0 && lbpRatio != null && lbpRatio < 0.31) ||
+            (chrominanceVar >= 100.0 &&
+                hogDominance != null &&
+                hogDominance >= 0.17 &&
+                lbpRatio != null &&
+                lbpRatio < 0.34) ||
+            (chrominanceVar >= 145.0 &&
+                hogDominance != null &&
+                hogDominance >= 0.15) ||
+            (chrominanceVar >= 50.0 &&
+                chrominanceVar < 80.0 &&
+                lbpRatio != null &&
+                lbpRatio < 0.25 &&
+                hogDominance != null &&
+                hogDominance >= 0.16));
 
     final effectiveUseNchw = isNativeNchw;
     final effectiveTargetSize = modelTargetSize;
@@ -335,27 +401,32 @@ class PassiveLivenessDetector {
         : LivenessStatus.spoof;
 
     // Multi-Factor Decision Fusion Engine:
-    // Protect genuine users with glasses from single-metric false positives (e.g. HOG frame edges),
-    // while catching definitive screen replay attacks (high chrominance variance).
-    // Note: isHighResScreenSpoof is a soft signal only (not a hard override) because smartphone
-    // front cameras have wide depth-of-field, making patch focus CV unreliable as a standalone gate.
+    // Require corroboration between heuristic signals before overriding neural confidence.
+    // No single heuristic metric is reliable enough to override a strong neural real prediction
+    // due to variable camera conditions (auto-exposure, lighting, glasses glare, depth-of-field).
     if (calculatedStatus == LivenessStatus.real) {
       int heuristicSpoofCount = 0;
       if (isPrintSpoof) heuristicSpoofCount++;
       if (isScreenGridSpoof) heuristicSpoofCount++;
       if (isScreenReplaySpoof) heuristicSpoofCount++;
       if (isHighResScreenSpoof) heuristicSpoofCount++;
+      if (isEmissiveScreenSpoof) heuristicSpoofCount++;
+      if (isBorderlineScreenReplaySpoof) heuristicSpoofCount++;
 
       final isStrongNeuralReal = currentRealProb >= 0.70;
 
-      // Chrominance variance (isScreenReplaySpoof) and 2D flat screen focus (isHighResScreenSpoof)
-      // act as primary screen replay indicators to catch high-resolution OLED screen attacks.
+      // Screen replay (isScreenReplaySpoof: chrominance variance), high-res screen glare
+      // (isHighResScreenSpoof: specular reflections), and emissive screen display re-photography
+      // act as hard overrides because emissive digital displays can fool neural models into predicting high real scores (e.g. 0.89-0.99).
       if (isScreenReplaySpoof ||
           isHighResScreenSpoof ||
+          isEmissiveScreenSpoof ||
+          isBorderlineScreenReplaySpoof ||
           (isStrongNeuralReal && heuristicSpoofCount >= 2) ||
           (!isStrongNeuralReal && heuristicSpoofCount >= 1)) {
         if (isPrintSpoof &&
             !isHighResScreenSpoof &&
+            !isEmissiveScreenSpoof &&
             !isScreenGridSpoof &&
             !isScreenReplaySpoof) {
           calculatedStatus = LivenessStatus.printSpoof;
@@ -446,7 +517,7 @@ class PassiveLivenessDetector {
     final buffer = LivenessImageBuffer(
       width: width,
       height: height,
-      format: LivenessImageFormat.bgra8888,
+      format: LivenessImageFormat.rgba8888,
       planes: [
         LivenessImagePlane(
           bytes: rgbaBytes,

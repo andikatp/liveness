@@ -10,6 +10,9 @@ enum LivenessImageFormat {
 
   /// BGRA 8888 32-bit format (typical for iOS camera streams).
   bgra8888,
+
+  /// RGBA 8888 32-bit format (typical for decoded static Flutter images).
+  rgba8888,
 }
 
 /// Represents a single plane in a raw camera frame buffer.
@@ -41,7 +44,7 @@ class LivenessImageBuffer {
   /// Buffer height in pixels.
   final int height;
 
-  /// Buffer color format (`yuv420`, `nv21`, `bgra8888`).
+  /// Buffer color format (`yuv420`, `nv21`, `bgra8888`, `rgba8888`).
   final LivenessImageFormat format;
 
   /// List of image planes.
@@ -70,11 +73,13 @@ class LivenessImageBuffer {
     }
 
     final planes = (cameraImage.planes as List)
-        .map((p) => LivenessImagePlane(
-              bytes: p.bytes as Uint8List,
-              bytesPerRow: p.bytesPerRow as int,
-              bytesPerPixel: p.bytesPerPixel as int?,
-            ))
+        .map(
+          (p) => LivenessImagePlane(
+            bytes: p.bytes as Uint8List,
+            bytesPerRow: p.bytesPerRow as int,
+            bytesPerPixel: p.bytesPerPixel as int?,
+          ),
+        )
         .toList();
 
     return LivenessImageBuffer(

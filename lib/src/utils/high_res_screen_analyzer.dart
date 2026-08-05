@@ -34,13 +34,13 @@ class HighResScreenAnalyzer {
   /// This is intentionally conservative to avoid false positives on real faces.
   final double minPatchDispersalThreshold;
 
-  /// Specular highlight ratio upper bound threshold (default: 0.08).
+  /// Specular highlight ratio upper bound threshold (default: 0.030).
   /// High values indicate glass screen reflection hotspots.
   final double maxSpecularRatioThreshold;
 
   const HighResScreenAnalyzer({
     this.minPatchDispersalThreshold = 0.35,
-    this.maxSpecularRatioThreshold = 0.08,
+    this.maxSpecularRatioThreshold = 0.030,
   });
 
   /// Analyzes a grayscale crop ([width] x [height] Uint8List) extracted from [ImagePreprocessor].

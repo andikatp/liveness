@@ -29,14 +29,14 @@ class ColorSpaceAnalysisResult {
 /// Evaluates YCbCr / YUV chrominance sub-sampling metrics ($\sigma^2_{CbCr}$)
 /// to detect emissive RGB digital display screen replay attacks.
 class ColorSpaceAnalyzer {
-  /// Upper bound threshold for chrominance variance (default: 140.0). Higher values indicate screen sub-pixel dispersion.
+  /// Upper bound threshold for chrominance variance (default: 160.0). Higher values indicate screen sub-pixel dispersion.
   final double maxVarianceThreshold;
 
   /// Lower bound threshold for chrominance variance (default: 0.5). Extremely low values indicate flat monochrome / synthetic photos.
   final double minVarianceThreshold;
 
   const ColorSpaceAnalyzer({
-    this.maxVarianceThreshold = 140.0,
+    this.maxVarianceThreshold = 160.0,
     this.minVarianceThreshold = 0.5,
   });
 
@@ -71,6 +71,7 @@ class ColorSpaceAnalyzer {
     }
 
     final isBgra = buffer.format == LivenessImageFormat.bgra8888;
+    final isRgba = buffer.format == LivenessImageFormat.rgba8888;
 
     double sumCb = 0.0;
     double sumCr = 0.0;
@@ -84,7 +85,7 @@ class ColorSpaceAnalyzer {
     final cbList = Float64List(maxSamples);
     final crList = Float64List(maxSamples);
 
-    if (isBgra) {
+    if (isBgra || isRgba) {
       final plane0 = buffer.planes[0].bytes;
       final stride = buffer.planes[0].bytesPerRow;
 
@@ -93,9 +94,9 @@ class ColorSpaceAnalyzer {
         for (int x = startX; x < endX; x += step) {
           final offset = rowOffset + (x << 2);
           if (offset + 2 < plane0.length) {
-            final b = plane0[offset].toDouble();
+            final b = (isBgra ? plane0[offset] : plane0[offset + 2]).toDouble();
             final g = plane0[offset + 1].toDouble();
-            final r = plane0[offset + 2].toDouble();
+            final r = (isBgra ? plane0[offset + 2] : plane0[offset]).toDouble();
 
             // Skip specular glare pixels (high brightness >= 245)
             final luma = 0.299 * r + 0.587 * g + 0.114 * b;

@@ -43,29 +43,32 @@ void main() {
       },
     );
 
-    test('Exposes raw single-frame metrics correctly alongside smoothed metrics', () {
-      final result = LivenessResult(
-        isReal: false,
-        status: LivenessStatus.spoof,
-        realScore: 0.4,
-        spoofScore: 0.6,
-        realLogit: 0.84,
-        spoofLogit: -0.84,
-        logitDiff: -0.4,
-        confidence: 0.4,
-        threshold: 0.0,
-        inferenceTime: Duration.zero,
-        rawRealScore: 0.844,
-        rawSpoofScore: 0.156,
-        rawLogitDiff: 1.68,
-        rawIsReal: true,
-      );
+    test(
+      'Exposes raw single-frame metrics correctly alongside smoothed metrics',
+      () {
+        final result = LivenessResult(
+          isReal: false,
+          status: LivenessStatus.spoof,
+          realScore: 0.4,
+          spoofScore: 0.6,
+          realLogit: 0.84,
+          spoofLogit: -0.84,
+          logitDiff: -0.4,
+          confidence: 0.4,
+          threshold: 0.0,
+          inferenceTime: Duration.zero,
+          rawRealScore: 0.844,
+          rawSpoofScore: 0.156,
+          rawLogitDiff: 1.68,
+          rawIsReal: true,
+        );
 
-      expect(result.isReal, isFalse);
-      expect(result.rawIsReal, isTrue);
-      expect(result.rawRealScore, equals(0.844));
-      expect(result.rawLogitDiff, equals(1.68));
-    });
+        expect(result.isReal, isFalse);
+        expect(result.rawIsReal, isTrue);
+        expect(result.rawRealScore, equals(0.844));
+        expect(result.rawLogitDiff, equals(1.68));
+      },
+    );
   });
 
   group('FaceBoundingBox tests', () {
@@ -114,44 +117,47 @@ void main() {
   });
 
   group('ImagePreprocessor tests', () {
-    test('edge pixel replication clamps out-of-bounds coordinates to boundary pixels', () {
-      final bytes = Uint8List(20 * 20 * 4);
-      // Fill 20x20 image with white pixels (R=255, G=255, B=255)
-      for (int i = 0; i < bytes.length; i += 4) {
-        bytes[i] = 255;
-        bytes[i + 1] = 255;
-        bytes[i + 2] = 255;
-        bytes[i + 3] = 255;
-      }
-      final buffer = LivenessImageBuffer(
-        width: 20,
-        height: 20,
-        format: LivenessImageFormat.bgra8888,
-        planes: [
-          LivenessImagePlane(
-            bytes: bytes,
-            bytesPerRow: 20 * 4,
-            bytesPerPixel: 4,
-          ),
-        ],
-      );
+    test(
+      'edge pixel replication clamps out-of-bounds coordinates to boundary pixels',
+      () {
+        final bytes = Uint8List(20 * 20 * 4);
+        // Fill 20x20 image with white pixels (R=255, G=255, B=255)
+        for (int i = 0; i < bytes.length; i += 4) {
+          bytes[i] = 255;
+          bytes[i + 1] = 255;
+          bytes[i + 2] = 255;
+          bytes[i + 3] = 255;
+        }
+        final buffer = LivenessImageBuffer(
+          width: 20,
+          height: 20,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: bytes,
+              bytesPerRow: 20 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
 
-      // Bounding box near corner so crop extends outside image
-      const bbox = FaceBoundingBox(x: -5, y: -5, width: 20, height: 20);
+        // Bounding box near corner so crop extends outside image
+        const bbox = FaceBoundingBox(x: -5, y: -5, width: 20, height: 20);
 
-      final tensor = ImagePreprocessor.preprocessBufferToTensor(
-        buffer,
-        boundingBox: bbox,
-        expansionFactor: 2.0,
-        targetSize: 10,
-        useNchw: false,
-      );
+        final tensor = ImagePreprocessor.preprocessBufferToTensor(
+          buffer,
+          boundingBox: bbox,
+          expansionFactor: 2.0,
+          targetSize: 10,
+          useNchw: false,
+        );
 
-      // Top-left corner of tensor corresponds to out-of-bound crop area -> should replicate white edge (1.0)
-      expect(tensor[0], equals(1.0));
-      expect(tensor[1], equals(1.0));
-      expect(tensor[2], equals(1.0));
-    });
+        // Top-left corner of tensor corresponds to out-of-bound crop area -> should replicate white edge (1.0)
+        expect(tensor[0], equals(1.0));
+        expect(tensor[1], equals(1.0));
+        expect(tensor[2], equals(1.0));
+      },
+    );
 
     test(
       'preprocessBufferToTensor converts BGRA buffer to float32 normalized [0..1] tensor (NCHW & NHWC)',
@@ -188,7 +194,10 @@ void main() {
         expect(tensorNchw.length, equals(49152));
         final hw = 128 * 128;
         expect(tensorNchw[0], equals(1.0)); // Channel 0 (R: 255/255)
-        expect(tensorNchw[hw], closeTo(128 / 255.0, 1e-3)); // Channel 1 (G: 128/255)
+        expect(
+          tensorNchw[hw],
+          closeTo(128 / 255.0, 1e-3),
+        ); // Channel 1 (G: 128/255)
         expect(tensorNchw[2 * hw], equals(0.0)); // Channel 2 (B: 0/255)
 
         // Test NHWC layout
@@ -202,6 +211,43 @@ void main() {
         expect(tensorNhwc[0], equals(1.0)); // R
         expect(tensorNhwc[1], closeTo(128 / 255.0, 1e-3)); // G
         expect(tensorNhwc[2], equals(0.0)); // B
+      },
+    );
+
+    test(
+      'preprocessBufferToTensor converts RGBA buffer without swapping red and blue channels',
+      () {
+        final bytes = Uint8List(4 * 4 * 4);
+        for (int i = 0; i < bytes.length; i += 4) {
+          bytes[i] = 255; // R
+          bytes[i + 1] = 128; // G
+          bytes[i + 2] = 0; // B
+          bytes[i + 3] = 255; // A
+        }
+
+        final buffer = LivenessImageBuffer(
+          width: 4,
+          height: 4,
+          format: LivenessImageFormat.rgba8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: bytes,
+              bytesPerRow: 4 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        final tensor = ImagePreprocessor.preprocessBufferToTensor(
+          buffer,
+          targetSize: 4,
+          useNchw: false,
+          enableContrastStretch: false,
+        );
+
+        expect(tensor[0], equals(1.0));
+        expect(tensor[1], closeTo(128 / 255.0, 1e-3));
+        expect(tensor[2], equals(0.0));
       },
     );
 
@@ -255,147 +301,162 @@ void main() {
       await savedFile.delete();
     });
 
-    test('preprocessBufferToTensor maintains 1:1 square crop aspect ratio for rectangular bounding box', () {
-      final bytes = Uint8List(100 * 100 * 4);
-      final buffer = LivenessImageBuffer(
-        width: 100,
-        height: 100,
-        format: LivenessImageFormat.bgra8888,
-        planes: [
-          LivenessImagePlane(
-            bytes: bytes,
-            bytesPerRow: 100 * 4,
-            bytesPerPixel: 4,
-          ),
-        ],
-      );
+    test(
+      'preprocessBufferToTensor maintains 1:1 square crop aspect ratio for rectangular bounding box',
+      () {
+        final bytes = Uint8List(100 * 100 * 4);
+        final buffer = LivenessImageBuffer(
+          width: 100,
+          height: 100,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: bytes,
+              bytesPerRow: 100 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
 
-      // Rectangular bounding box (30x50)
-      const bbox = FaceBoundingBox(x: 10, y: 10, width: 30, height: 50);
+        // Rectangular bounding box (30x50)
+        const bbox = FaceBoundingBox(x: 10, y: 10, width: 30, height: 50);
 
-      // Should complete without error using square crop math (baseSide = max(30, 50) = 50)
-      final tensor = ImagePreprocessor.preprocessBufferToTensor(
-        buffer,
-        boundingBox: bbox,
-        expansionFactor: 2.0,
-        targetSize: 128,
-        useNchw: true,
-      );
+        // Should complete without error using square crop math (baseSide = max(30, 50) = 50)
+        final tensor = ImagePreprocessor.preprocessBufferToTensor(
+          buffer,
+          boundingBox: bbox,
+          expansionFactor: 2.0,
+          targetSize: 128,
+          useNchw: true,
+        );
 
-      expect(tensor.length, equals(49152));
-    });
+        expect(tensor.length, equals(49152));
+      },
+    );
 
-    test('preprocessBufferToTensor calculates true 2.0x square crop with reflect101 padding', () {
-      final bytes = Uint8List(100 * 100 * 4);
-      final buffer = LivenessImageBuffer(
-        width: 100,
-        height: 100,
-        format: LivenessImageFormat.bgra8888,
-        planes: [
-          LivenessImagePlane(
-            bytes: bytes,
-            bytesPerRow: 100 * 4,
-            bytesPerPixel: 4,
-          ),
-        ],
-      );
+    test(
+      'preprocessBufferToTensor calculates true 2.0x square crop with reflect101 padding',
+      () {
+        final bytes = Uint8List(100 * 100 * 4);
+        final buffer = LivenessImageBuffer(
+          width: 100,
+          height: 100,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: bytes,
+              bytesPerRow: 100 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
 
-      // Large face box (60x60) in 100x100 frame -> baseSide = 60.
-      // 2.0x expansion is 120.0. Unclamped crop extends outside boundaries and uses reflect101 padding.
-      const bbox = FaceBoundingBox(x: 20, y: 20, width: 60, height: 60);
+        // Large face box (60x60) in 100x100 frame -> baseSide = 60.
+        // 2.0x expansion is 120.0. Unclamped crop extends outside boundaries and uses reflect101 padding.
+        const bbox = FaceBoundingBox(x: 20, y: 20, width: 60, height: 60);
 
-      final tensor = ImagePreprocessor.preprocessBufferToTensor(
-        buffer,
-        boundingBox: bbox,
-        expansionFactor: 2.0,
-        targetSize: 10,
-        useNchw: true,
-      );
+        final tensor = ImagePreprocessor.preprocessBufferToTensor(
+          buffer,
+          boundingBox: bbox,
+          expansionFactor: 2.0,
+          targetSize: 10,
+          useNchw: true,
+        );
 
-      expect(tensor.length, equals(300));
-    });
+        expect(tensor.length, equals(300));
+      },
+    );
 
-    test('reflect101 border padding mirrors pixels for out-of-bounds crop coordinates', () {
-      // 10x10 BGRA image where column 0 = red (255, 0, 0), column 1 = green (0, 255, 0)
-      final bytes = Uint8List(10 * 10 * 4);
-      for (int y = 0; y < 10; y++) {
-        for (int x = 0; x < 10; x++) {
-          final idx = (y * 10 + x) * 4;
-          if (x == 0) {
-            bytes[idx] = 0; // B
-            bytes[idx + 1] = 0; // G
-            bytes[idx + 2] = 255; // R
-            bytes[idx + 3] = 255; // A
-          } else if (x == 1) {
-            bytes[idx] = 0; // B
-            bytes[idx + 1] = 255; // G
-            bytes[idx + 2] = 0; // R
-            bytes[idx + 3] = 255; // A
+    test(
+      'reflect101 border padding mirrors pixels for out-of-bounds crop coordinates',
+      () {
+        // 10x10 BGRA image where column 0 = red (255, 0, 0), column 1 = green (0, 255, 0)
+        final bytes = Uint8List(10 * 10 * 4);
+        for (int y = 0; y < 10; y++) {
+          for (int x = 0; x < 10; x++) {
+            final idx = (y * 10 + x) * 4;
+            if (x == 0) {
+              bytes[idx] = 0; // B
+              bytes[idx + 1] = 0; // G
+              bytes[idx + 2] = 255; // R
+              bytes[idx + 3] = 255; // A
+            } else if (x == 1) {
+              bytes[idx] = 0; // B
+              bytes[idx + 1] = 255; // G
+              bytes[idx + 2] = 0; // R
+              bytes[idx + 3] = 255; // A
+            }
           }
         }
-      }
 
-      final buffer = LivenessImageBuffer(
-        width: 10,
-        height: 10,
-        format: LivenessImageFormat.bgra8888,
-        planes: [
-          LivenessImagePlane(
-            bytes: bytes,
-            bytesPerRow: 10 * 4,
-            bytesPerPixel: 4,
-          ),
-        ],
-      );
+        final buffer = LivenessImageBuffer(
+          width: 10,
+          height: 10,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: bytes,
+              bytesPerRow: 10 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
 
-      // Crop box overflowing on the left (x = -2)
-      const bbox = FaceBoundingBox(x: -2, y: 0, width: 10, height: 10);
-      final tensor = ImagePreprocessor.preprocessBufferToTensor(
-        buffer,
-        boundingBox: bbox,
-        expansionFactor: 1.0,
-        targetSize: 10,
-        useNchw: false,
-      );
+        // Crop box overflowing on the left (x = -2)
+        const bbox = FaceBoundingBox(x: -2, y: 0, width: 10, height: 10);
+        final tensor = ImagePreprocessor.preprocessBufferToTensor(
+          buffer,
+          boundingBox: bbox,
+          expansionFactor: 1.0,
+          targetSize: 10,
+          useNchw: false,
+        );
 
-      // Should complete without out-of-range exception and contain mirrored values
-      expect(tensor.length, equals(300));
-    });
+        // Should complete without out-of-range exception and contain mirrored values
+        expect(tensor.length, equals(300));
+      },
+    );
 
-    test('preprocessBufferToTensor supports isBgr: true for BGR channel ordering', () {
-      final bytes = Uint8List(10 * 10 * 4);
-      for (int i = 0; i < bytes.length; i += 4) {
-        bytes[i] = 255; // B = 255
-        bytes[i + 1] = 128; // G = 128
-        bytes[i + 2] = 0; // R = 0
-        bytes[i + 3] = 255;
-      }
+    test(
+      'preprocessBufferToTensor supports isBgr: true for BGR channel ordering',
+      () {
+        final bytes = Uint8List(10 * 10 * 4);
+        for (int i = 0; i < bytes.length; i += 4) {
+          bytes[i] = 255; // B = 255
+          bytes[i + 1] = 128; // G = 128
+          bytes[i + 2] = 0; // R = 0
+          bytes[i + 3] = 255;
+        }
 
-      final buffer = LivenessImageBuffer(
-        width: 10,
-        height: 10,
-        format: LivenessImageFormat.bgra8888,
-        planes: [
-          LivenessImagePlane(
-            bytes: bytes,
-            bytesPerRow: 10 * 4,
-            bytesPerPixel: 4,
-          ),
-        ],
-      );
+        final buffer = LivenessImageBuffer(
+          width: 10,
+          height: 10,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: bytes,
+              bytesPerRow: 10 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
 
-      final tensorBgr = ImagePreprocessor.preprocessBufferToTensor(
-        buffer,
-        targetSize: 10,
-        useNchw: true,
-        isBgr: true,
-      );
+        final tensorBgr = ImagePreprocessor.preprocessBufferToTensor(
+          buffer,
+          targetSize: 10,
+          useNchw: true,
+          isBgr: true,
+        );
 
-      final hw = 10 * 10;
-      expect(tensorBgr[0], equals(1.0)); // Channel 0 is B (255/255)
-      expect(tensorBgr[hw], closeTo(128 / 255.0, 1e-3)); // Channel 1 is G (128/255)
-      expect(tensorBgr[2 * hw], equals(0.0)); // Channel 2 is R (0/255)
-    });
+        final hw = 10 * 10;
+        expect(tensorBgr[0], equals(1.0)); // Channel 0 is B (255/255)
+        expect(
+          tensorBgr[hw],
+          closeTo(128 / 255.0, 1e-3),
+        ); // Channel 1 is G (128/255)
+        expect(tensorBgr[2 * hw], equals(0.0)); // Channel 2 is R (0/255)
+      },
+    );
   });
 
   group('PassiveLivenessDetector tests', () {
@@ -405,66 +466,138 @@ void main() {
       TestWidgetsFlutterBinding.ensureInitialized();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-        if (methodCall.method == 'initModel') {
-          return {
-            'inputShape': [1, 3, 128, 128],
-            'isNchw': true,
-            'targetSize': 128,
-          };
-        }
-        if (methodCall.method == 'runInference') {
-          return [3.5, 0.5];
-        }
-        if (methodCall.method == 'closeModel') {
-          return null;
-        }
-        return null;
-      });
+            if (methodCall.method == 'initModel') {
+              return {
+                'inputShape': [1, 3, 128, 128],
+                'isNchw': true,
+                'targetSize': 128,
+              };
+            }
+            if (methodCall.method == 'runInference') {
+              return [3.5, 0.5];
+            }
+            if (methodCall.method == 'closeModel') {
+              return null;
+            }
+            return null;
+          });
+    });
+
+    test('EMA tracker initializes as null and resets correctly', () async {
+      final detector = PassiveLivenessDetector();
+
+      expect(detector.emaRealScore, isNull);
+      expect(detector.isInitialized, isFalse);
+
+      detector.resetEma();
+      expect(detector.emaRealScore, isNull);
+      await detector.dispose();
     });
 
     test(
-      'EMA tracker initializes as null and resets correctly',
+      'Initializes with mock model bytes and runs detection pipeline',
       () async {
         final detector = PassiveLivenessDetector();
+        final dummyBytes = Uint8List.fromList([1, 2, 3, 4]);
 
-        expect(detector.emaRealScore, isNull);
-        expect(detector.isInitialized, isFalse);
+        await detector.initialize(modelBytes: dummyBytes);
+        expect(detector.isInitialized, isTrue);
+        expect(detector.isNativeNchw, isTrue);
+        expect(detector.modelTargetSize, equals(128));
 
-        detector.resetEma();
-        expect(detector.emaRealScore, isNull);
+        final frameBytes = Uint8List(100 * 100 * 4);
+        final buffer = LivenessImageBuffer(
+          width: 100,
+          height: 100,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: frameBytes,
+              bytesPerRow: 100 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        final result = await detector.detectLivenessFromBuffer(buffer);
+        expect(result.realLogit, equals(3.5));
+        expect(result.spoofLogit, equals(0.5));
+
         await detector.dispose();
+        expect(detector.isInitialized, isFalse);
       },
     );
 
-    test('Initializes with mock model bytes and runs detection pipeline', () async {
-      final detector = PassiveLivenessDetector();
-      final dummyBytes = Uint8List.fromList([1, 2, 3, 4]);
+    test(
+      'applies rotated Android face box to heuristic analyzers before accepting real logits',
+      () async {
+        final detector = PassiveLivenessDetector();
+        await detector.initialize(modelBytes: Uint8List.fromList([1, 2, 3, 4]));
 
-      await detector.initialize(modelBytes: dummyBytes);
-      expect(detector.isInitialized, isTrue);
-      expect(detector.isNativeNchw, isTrue);
-      expect(detector.modelTargetSize, equals(128));
+        const width = 100;
+        const height = 80;
+        final frameBytes = Uint8List(width * height * 4);
+        for (var y = 0; y < height; y++) {
+          for (var x = 0; x < width; x++) {
+            final idx = (y * width + x) * 4;
+            frameBytes[idx] = 110 + (y % 20); // B
+            frameBytes[idx + 1] = 120; // G
+            frameBytes[idx + 2] = 140 + (x % 20); // R
+            frameBytes[idx + 3] = 255; // A
+          }
+        }
 
-      final frameBytes = Uint8List(100 * 100 * 4);
-      final buffer = LivenessImageBuffer(
-        width: 100,
-        height: 100,
-        format: LivenessImageFormat.bgra8888,
-        planes: [
-          LivenessImagePlane(
-            bytes: frameBytes,
-            bytesPerRow: 100 * 4,
-            bytesPerPixel: 4,
-          ),
-        ],
-      );
+        const rawFaceBox = FaceBoundingBox(x: 60, y: 15, width: 20, height: 30);
+        for (var y = rawFaceBox.y.toInt(); y < rawFaceBox.bottom.toInt(); y++) {
+          for (
+            var x = rawFaceBox.x.toInt();
+            x < rawFaceBox.right.toInt();
+            x++
+          ) {
+            final idx = (y * width + x) * 4;
+            final even = ((x ~/ 8) + (y ~/ 8)).isEven;
+            frameBytes[idx] = even ? 255 : 0; // B
+            frameBytes[idx + 1] = 40; // G
+            frameBytes[idx + 2] = even ? 0 : 255; // R
+            frameBytes[idx + 3] = 255; // A
+          }
+        }
 
-      final result = await detector.detectLivenessFromBuffer(buffer);
-      expect(result.realLogit, equals(3.5));
-      expect(result.spoofLogit, equals(0.5));
+        final buffer = LivenessImageBuffer(
+          width: width,
+          height: height,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: frameBytes,
+              bytesPerRow: width * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
 
-      await detector.dispose();
-      expect(detector.isInitialized, isFalse);
-    });
+        const rotatedMlKitBox = FaceBoundingBox(
+          x: 15,
+          y: 20,
+          width: 30,
+          height: 20,
+        );
+
+        final result = await detector.detectLivenessFromBuffer(
+          buffer,
+          boundingBox: rotatedMlKitBox,
+          rotation: 270,
+          isRotatedBoundingBox: true,
+          enableProximityGate: false,
+        );
+
+        expect(result.rawIsReal, isTrue);
+        expect(result.chrominanceVariance, greaterThan(160.0));
+        expect(result.status, equals(LivenessStatus.screenReplaySpoof));
+        expect(result.isReal, isFalse);
+
+        await detector.dispose();
+      },
+    );
   });
 }
