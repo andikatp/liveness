@@ -1,0 +1,29 @@
+{
+  "accuracy": {
+    "overall": 98.2,
+    "real": 97.55,
+    "spoof": 98.73
+  },
+  "roc_auc": 0.9984,
+  "average_precision": 0.9987,
+  "inference": {
+    "avg_ms": 26.32,
+    "fps": 38.0,
+    "device": "cpu"
+  },
+  "model": {
+    "total_params": 630179,
+    "checkpoint_size_mb": 2.83
+  },
+  "validation_samples": 71338,
+  "confusion_matrix": [
+    [
+      31753,
+      796
+    ],
+    [
+      491,
+      38298
+    ]
+  ]
+}

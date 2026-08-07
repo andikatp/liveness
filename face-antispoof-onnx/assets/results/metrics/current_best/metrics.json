@@ -1,0 +1,29 @@
+{
+  "accuracy": {
+    "overall": 98.2,
+    "real": 97.58,
+    "spoof": 98.73
+  },
+  "roc_auc": 0.9984,
+  "average_precision": 0.9987,
+  "inference": {
+    "avg_ms": 0.13,
+    "fps": 7541.2,
+    "device": "cuda"
+  },
+  "model": {
+    "total_params": 695971,
+    "checkpoint_size_mb": 2.83
+  },
+  "validation_samples": 71338,
+  "confusion_matrix": [
+    [
+      31760,
+      789
+    ],
+    [
+      493,
+      38296
+    ]
+  ]
+}

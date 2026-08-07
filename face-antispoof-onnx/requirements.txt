@@ -1,0 +1,16 @@
+torch
+torchvision
+timm
+numpy
+pandas
+scikit-learn
+opencv-python
+Pillow
+onnx
+onnxsim
+onnxruntime
+tqdm
+tensorboardX
+py-cpuinfo
+GPUtil
+psutil

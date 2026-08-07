@@ -26,11 +26,14 @@ migrate_working_dir/
 /pubspec.lock
 doc/
 .dart_tool/
-.flutter-plugins-dependencies
 /build/
 /coverage/
-face-antispoof-onnx/
-.agents/
+# face-antispoof-onnx ignores
+face-antispoof-onnx/output/
+face-antispoof-onnx/data/
+face-antispoof-onnx/models/checkpoints/
+
+
 graphify-out
 skills-lock.json
 AGENTS.md
