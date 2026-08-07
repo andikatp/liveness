@@ -28,10 +28,8 @@ doc/
 .dart_tool/
 /build/
 /coverage/
-# face-antispoof-onnx ignores
-face-antispoof-onnx/output/
-face-antispoof-onnx/data/
-face-antispoof-onnx/models/checkpoints/
+face-antispoof-onnx/
+
 
 
 graphify-out
