@@ -26,12 +26,11 @@ migrate_working_dir/
 /pubspec.lock
 doc/
 .dart_tool/
+.flutter-plugins-dependencies
 /build/
 /coverage/
 face-antispoof-onnx/
-
-
-
+.agents/
 graphify-out
 skills-lock.json
 AGENTS.md
@@ -58,3 +57,5 @@ local.properties
 /ios/DerivedData
 *.xcworkspace
 *.xcodeproj
+
+/assets/best_model_old.tflite

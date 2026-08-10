@@ -378,16 +378,22 @@ class PassiveLivenessDetector {
     final effectiveUseNchw = isNativeNchw;
     final effectiveTargetSize = modelTargetSize;
 
+    final effectiveExpansion = (effectiveTargetSize == 80)
+        ? 2.7
+        : expansionFactor;
+    final effectiveIsBgr = (effectiveTargetSize == 80) ? true : false;
+    final effectiveContrastStretch = (effectiveTargetSize == 80) ? false : true;
+
     final tensorData = ImagePreprocessor.preprocessBufferToTensor(
       buffer,
       boundingBox: boundingBox,
       rotation: rotation,
       isRotatedBoundingBox: isRotatedBoundingBox,
-      expansionFactor: expansionFactor,
+      expansionFactor: effectiveExpansion,
       targetSize: effectiveTargetSize,
       useNchw: effectiveUseNchw,
-      isBgr: false,
-      enableContrastStretch: true,
+      isBgr: effectiveIsBgr,
+      enableContrastStretch: effectiveContrastStretch,
     );
 
     LivenessLogger.logTensorStats(tensorData);
@@ -458,31 +464,57 @@ class PassiveLivenessDetector {
     final spoofScoreEma = 1.0 - safeEma;
     final smoothedDiff = math.log(safeEma / (1.0 - safeEma));
 
-    LivenessStatus calculatedStatus = (smoothedDiff >= threshold)
+    final isThresholdPassed = (threshold > 0.0 && threshold < 1.0)
+        ? (safeEma >= threshold)
+        : (smoothedDiff >= threshold);
+
+    LivenessStatus calculatedStatus = isThresholdPassed
         ? LivenessStatus.real
         : LivenessStatus.spoof;
 
     // Multi-Factor Decision Fusion Engine:
     // Any calibrated physical spoof indicator overrides neural real score.
     if (calculatedStatus == LivenessStatus.real) {
-      final isAnySpoofSignal =
-          isPrintSpoof ||
-          isScreenGridSpoof ||
-          isScreenReplaySpoof ||
-          isHighResScreenSpoof ||
-          isEmissiveScreenSpoof ||
-          isBorderlineScreenReplaySpoof ||
-          is2DFlatSpoof ||
-          isEmissiveSaturationSpoof ||
-          isMoireSpoof;
+      final hasNatural3DDepth =
+          laplacianDelta != null && laplacianDelta >= 0.12;
 
-      if (isAnySpoofSignal) {
+      final isScreenSubPixelGrid =
+          hogDominance != null &&
+          hogDominance >= 0.250 &&
+          lbpRatio != null &&
+          lbpRatio < 0.320 &&
+          chrominanceVar != null &&
+          chrominanceVar >= 85.0;
+
+      final isEmissiveDisplayLighting =
+          chrominanceVar != null && chrominanceVar >= 60.0;
+
+      final isAnySpoofSignal =
+          (isPrintSpoof && !hasNatural3DDepth) ||
+          (isEmissiveDisplayLighting &&
+              (isScreenGridSpoof ||
+                  isScreenReplaySpoof ||
+                  isHighResScreenSpoof ||
+                  isEmissiveScreenSpoof ||
+                  isBorderlineScreenReplaySpoof ||
+                  is2DFlatSpoof ||
+                  isEmissiveSaturationSpoof ||
+                  isMoireSpoof ||
+                  isScreenSubPixelGrid));
+
+      final isOverwhelmingNeuralReal =
+          rawResult.logitDiff >= 4.0 &&
+          hasNatural3DDepth &&
+          !isScreenSubPixelGrid;
+
+      if (isAnySpoofSignal && !isOverwhelmingNeuralReal) {
         if (isPrintSpoof &&
             !isHighResScreenSpoof &&
             !isEmissiveScreenSpoof &&
             !isScreenGridSpoof &&
             !isScreenReplaySpoof &&
-            !isBorderlineScreenReplaySpoof) {
+            !isBorderlineScreenReplaySpoof &&
+            !isScreenSubPixelGrid) {
           calculatedStatus = LivenessStatus.printSpoof;
         } else {
           calculatedStatus = LivenessStatus.screenReplaySpoof;

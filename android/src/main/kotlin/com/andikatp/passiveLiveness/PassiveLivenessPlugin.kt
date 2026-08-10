@@ -141,16 +141,16 @@ class PassiveLivenessPlugin : FlutterPlugin, MethodCallHandler {
                 rewind()
             }
 
-            val outputMap = HashMap<Int, Any>()
-            val outputFloats = Array(1) { FloatArray(2) }
+            val outputTensor = currentInterpreter.getOutputTensor(0)
+            val outShape = outputTensor.shape()
+            val numClasses = if (outShape.size >= 2) outShape[1] else 2
+            val outputFloats = Array(1) { FloatArray(numClasses) }
             outputMap[0] = outputFloats
 
             currentInterpreter.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputMap)
 
-            val realLogit = outputFloats[0][0].toDouble()
-            val spoofLogit = outputFloats[0][1].toDouble()
-
-            result.success(listOf(realLogit, spoofLogit))
+            val doubleList = outputFloats[0].map { it.toDouble() }
+            result.success(doubleList)
         } catch (e: Exception) {
             result.error("INFERENCE_FAILED", "Native inference execution error: ${e.message}", null)
         }

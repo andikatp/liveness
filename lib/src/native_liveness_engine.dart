@@ -62,7 +62,24 @@ class NativeLivenessEngine {
       return [0.0, 0.0];
     }
 
-    return [(result[0] as num).toDouble(), (result[1] as num).toDouble()];
+    final double realLogit;
+    final double spoofLogit;
+
+    if (result.length == 3) {
+      // 3-class MiniFASNet specification:
+      // index 0: 2D Spoof, index 1: 3D Spoof, index 2: Real Face
+      realLogit = (result[2] as num).toDouble();
+      final spoof2d = (result[0] as num).toDouble();
+      final spoof3d = (result[1] as num).toDouble();
+      spoofLogit = spoof2d > spoof3d ? spoof2d : spoof3d;
+    } else {
+      // 2-class binary specification:
+      // index 0: Real Face, index 1: Spoof Face
+      realLogit = (result[0] as num).toDouble();
+      spoofLogit = (result[1] as num).toDouble();
+    }
+
+    return [realLogit, spoofLogit];
   }
 
   /// Close the native TFLite interpreter and free platform resources.
