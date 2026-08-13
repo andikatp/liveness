@@ -85,12 +85,11 @@ void main() {
       print(
         '${fileName.padRight(19)} | ${expected.padRight(8)} | '
         '${colorRes.chrominanceVariance.toStringAsFixed(1).padRight(9)} | '
-        '${colorRes.meanCb.toStringAsFixed(1).padRight(7)} | '
-        '${colorRes.meanCr.toStringAsFixed(1).padRight(7)} | '
+        '${textureRes.lbpNonUniformRatio.toStringAsFixed(3).padRight(9)} | '
+        '${textureRes.hogPeakDominance.toStringAsFixed(3).padRight(7)} | '
         '${highResRes.laplacianVariance.toStringAsFixed(1).padRight(9)} | '
         '${highResRes.patchLaplacianDispersal.toStringAsFixed(3).padRight(9)} | '
-        '${textureRes.lbpNonUniformRatio.toStringAsFixed(3).padRight(9)} | '
-        '${textureRes.hogPeakDominance.toStringAsFixed(3).padRight(7)}',
+        '${colorRes.saturationVariance.toStringAsFixed(4).padRight(9)}',
       );
     }
     print(

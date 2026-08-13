@@ -763,5 +763,55 @@ void main() {
         await detector.dispose();
       },
     );
+
+    test(
+      'classifies iPhone high-res real face with chrominance variance ~290 and deep DoF as REAL',
+      () async {
+        final detector = PassiveLivenessDetector();
+        await detector.initialize(modelBytes: Uint8List.fromList([1, 2, 3, 4]));
+
+        const width = 120;
+        const height = 120;
+        final frameBytes = Uint8List(width * height * 4);
+
+        // Generate smooth natural skin tones (R > G > B) with rich color variation (lips/skin/hair)
+        for (int y = 0; y < height; y++) {
+          for (int x = 0; x < width; x++) {
+            final idx = (y * width + x) * 4;
+            // Smooth gradient representing face features
+            final skinGrad = ((x + y) % 30);
+            frameBytes[idx] = (100 + skinGrad).clamp(0, 255); // B
+            frameBytes[idx + 1] = (130 + skinGrad * 2).clamp(0, 255); // G
+            frameBytes[idx + 2] = (210 + skinGrad).clamp(0, 255); // R
+            frameBytes[idx + 3] = 255; // A
+          }
+        }
+
+        final buffer = LivenessImageBuffer(
+          width: width,
+          height: height,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: frameBytes,
+              bytesPerRow: width * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        final result = await detector.detectLivenessFromBuffer(
+          buffer,
+          enableProximityGate: false,
+        );
+
+        // Model returns [3.5, 0.5] (logitDiff = 3.0), but let's ensure it stays REAL
+        expect(result.rawIsReal, isTrue);
+        expect(result.isReal, isTrue);
+        expect(result.status, equals(LivenessStatus.real));
+
+        await detector.dispose();
+      },
+    );
   });
 }

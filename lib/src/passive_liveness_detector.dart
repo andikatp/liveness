@@ -310,12 +310,14 @@ class PassiveLivenessDetector {
       isEmissiveSaturationSpoof = colorResult.isEmissiveSaturationSpoof;
     }
 
-    // Flat paper print photo attack detection (low chrominance variance + LBP degradation):
+    // Flat paper print photo attack detection (low chrominance variance + LBP degradation + HOG halftone grid):
     if (lbpRatio != null &&
         lbpRatio < 0.250 &&
         chrominanceVar != null &&
         chrominanceVar >= 50.0 &&
-        chrominanceVar < 80.0) {
+        chrominanceVar < 80.0 &&
+        hogDominance != null &&
+        hogDominance >= 0.160) {
       isPrintSpoof = true;
     }
 
@@ -440,8 +442,9 @@ class PassiveLivenessDetector {
         ((chrominanceVar >= 110.0 &&
                 lbpRatio != null &&
                 lbpRatio < 0.310 &&
-                laplacianDelta != null &&
-                laplacianDelta < 0.300) ||
+                hogDominance != null &&
+                hogDominance >= 0.170 &&
+                rawResult.logitDiff < 5.0) ||
             (chrominanceVar >= 100.0 &&
                 hogDominance != null &&
                 hogDominance >= 0.170 &&
@@ -458,8 +461,7 @@ class PassiveLivenessDetector {
                 lbpRatio != null &&
                 lbpRatio < 0.25 &&
                 hogDominance != null &&
-                hogDominance >= 0.16 &&
-                (laplacianDelta == null || laplacianDelta < 0.12)));
+                hogDominance >= 0.16));
 
     // Balanced EMA Calculation:
     final currentRealProb = 1.0 / (1.0 + math.exp(spoofLogit - realLogit));
@@ -490,22 +492,19 @@ class PassiveLivenessDetector {
     // Multi-Factor Decision Fusion Engine:
     // Any calibrated physical spoof indicator overrides neural real score.
     if (calculatedStatus == LivenessStatus.real) {
-      final hasNatural3DDepth =
-          laplacianDelta != null && laplacianDelta >= 0.12;
-
       final isScreenSubPixelGrid =
           hogDominance != null &&
-          hogDominance >= 0.250 &&
+          hogDominance >= 0.320 &&
           lbpRatio != null &&
-          lbpRatio < 0.320 &&
+          lbpRatio < 0.280 &&
           chrominanceVar != null &&
-          chrominanceVar >= 85.0;
+          chrominanceVar >= 110.0;
 
       final isEmissiveDisplayLighting =
           chrominanceVar != null && chrominanceVar >= 80.0;
 
       final isAnySpoofSignal =
-          (isPrintSpoof && !hasNatural3DDepth) ||
+          isPrintSpoof ||
           (isEmissiveDisplayLighting &&
               (isScreenGridSpoof ||
                   isScreenReplaySpoof ||
@@ -517,15 +516,22 @@ class PassiveLivenessDetector {
                   isMoireSpoof ||
                   isScreenSubPixelGrid));
 
-      final isExtremeScreenGlare =
-          chrominanceVar != null && chrominanceVar >= 100.0;
+      // Overwhelming neural certainty safeguard:
+      // When the neural network is confident (rawResult.logitDiff >= 3.5 && rawResult.realLogit >= 1.5),
+      // prioritize genuine real users and do not allow soft micro-texture (HOG/LBP/Chrominance/2D flatness)
+      // to cause false rejections. Only extreme, unequivocal physical attack signals (emissive saturation
+      // spikes, extreme moiré fringes, or high-energy glass reflections) can override high neural confidence.
+      final isExtremeAttackSignal =
+          isEmissiveSaturationSpoof ||
+          isMoireSpoof ||
+          (isEmissiveScreenSpoof && specularRatio != null && specularRatio >= 0.020);
 
-      final isOverwhelmingNeuralReal =
-          rawResult.logitDiff >= (isExtremeScreenGlare ? 4.0 : 1.5) &&
-          hasNatural3DDepth &&
-          !isScreenSubPixelGrid;
+      final isConfidentNeuralReal =
+          rawResult.logitDiff >= 3.5 &&
+          rawResult.realLogit >= 1.5 &&
+          !isExtremeAttackSignal;
 
-      if (isAnySpoofSignal && !isOverwhelmingNeuralReal) {
+      if (isAnySpoofSignal && !isConfidentNeuralReal) {
         if (isPrintSpoof &&
             !isHighResScreenSpoof &&
             !isEmissiveScreenSpoof &&

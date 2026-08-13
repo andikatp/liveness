@@ -6,7 +6,7 @@ repository: https://github.com/andikatp/passive_liveness
 issue_tracker: https://github.com/andikatp/passive_liveness/issues
 
 environment:
-  sdk: ^3.12.2
+  sdk: ^3.13.0
   flutter: ">=3.3.0"
 
 dependencies:
