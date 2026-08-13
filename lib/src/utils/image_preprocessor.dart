@@ -7,6 +7,19 @@ import '../models/face_bounding_box.dart';
 import '../models/liveness_image_buffer.dart';
 import 'liveness_logger.dart';
 
+/// Normalization schemes supported for input tensor preparation.
+enum NormalizationScheme {
+  /// Standard 0.0 to 1.0 normalization (`val / 255.0`).
+  zeroToOne,
+
+  /// Symmetric -1.0 to 1.0 normalization (`(val - 127.5) / 127.5`).
+  minusOneToOne,
+
+  /// PyTorch standard ImageNet normalization (`(val/255.0 - mean) / std`).
+  /// Mean = [0.485, 0.456, 0.406], Std = [0.229, 0.224, 0.225].
+  imageNet,
+}
+
 /// Preprocessing utilities for passive face anti-spoofing input.
 class ImagePreprocessor {
   const ImagePreprocessor._();
@@ -16,6 +29,25 @@ class ImagePreprocessor {
 
   /// Default bounding box expansion factor recommended by MiniFAS (1.5x for this custom model).
   static const double defaultExpansionFactor = 1.5;
+
+  /// Normalizes raw 0..255 pixel intensity according to specified [NormalizationScheme].
+  static double normalizePixel(
+    double val, {
+    required int colorChannel, // 0: Red, 1: Green, 2: Blue
+    NormalizationScheme scheme = NormalizationScheme.zeroToOne,
+  }) {
+    switch (scheme) {
+      case NormalizationScheme.minusOneToOne:
+        return (val - 127.5) / 127.5;
+      case NormalizationScheme.imageNet:
+        const mean = [0.485, 0.456, 0.406];
+        const std = [0.229, 0.224, 0.225];
+        final cIdx = colorChannel.clamp(0, 2);
+        return ((val / 255.0) - mean[cIdx]) / std[cIdx];
+      case NormalizationScheme.zeroToOne:
+        return val / 255.0;
+    }
+  }
 
   /// Reflect101 coordinate mapping (`g fedcba|abcdefgh|gfedcba`) for smooth border padding.
   ///
@@ -36,8 +68,8 @@ class ImagePreprocessor {
 
   /// Preprocesses a raw camera [LivenessImageBuffer] into a Float32 tensor.
   ///
-  /// Stores normalized RGB pixel values in `[0.0, 1.0]` range.
-  /// Out-of-boundary pixels use **Edge Pixel Replication** (`BORDER_REPLICATE` coordinate clamping)
+  /// Stores normalized RGB/BGR pixel values in Float32 format.
+  /// Out-of-boundary pixels use **Reflect101 Border Padding** (`_reflect101`)
   /// to avoid artificial black border artifacts.
   ///
   /// If [useNchw] is `true` (default), the tensor is structured in NCHW format
@@ -51,6 +83,7 @@ class ImagePreprocessor {
     int targetSize = defaultModelSize,
     bool useNchw = true,
     bool isBgr = false,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
     bool enableContrastStretch = true,
   }) {
     final rawW = buffer.width;
@@ -308,11 +341,31 @@ class ImagePreprocessor {
           }
         }
 
-        // Store normalized 0.0 - 1.0 Float32 values
+        // Store normalized Float32 values based on NormalizationScheme
         final spatialIdx = y * targetSize + x;
-        final c0Norm = (isBgr ? sumB : sumR) / 255.0;
-        final c1Norm = sumG / 255.0;
-        final c2Norm = (isBgr ? sumR : sumB) / 255.0;
+        final c0Val = isBgr ? sumB : sumR;
+        final c1Val = sumG;
+        final c2Val = isBgr ? sumR : sumB;
+
+        final c0Channel = isBgr ? 2 : 0;
+        final c1Channel = 1;
+        final c2Channel = isBgr ? 0 : 2;
+
+        final c0Norm = normalizePixel(
+          c0Val,
+          colorChannel: c0Channel,
+          scheme: normalizationScheme,
+        );
+        final c1Norm = normalizePixel(
+          c1Val,
+          colorChannel: c1Channel,
+          scheme: normalizationScheme,
+        );
+        final c2Norm = normalizePixel(
+          c2Val,
+          colorChannel: c2Channel,
+          scheme: normalizationScheme,
+        );
 
         if (useNchw) {
           tensor[spatialIdx] = c0Norm;
@@ -350,6 +403,7 @@ class ImagePreprocessor {
     int targetSize = defaultModelSize,
     bool useNchw = true,
     bool isBgr = false,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
     bool enableContrastStretch = false,
   }) {
     final faceBbox =
@@ -447,9 +501,29 @@ class ImagePreprocessor {
         }
 
         final spatialIdx = y * targetSize + x;
-        final c0Norm = (isBgr ? sumB : sumR) / 255.0;
-        final c1Norm = sumG / 255.0;
-        final c2Norm = (isBgr ? sumR : sumB) / 255.0;
+        final c0Val = isBgr ? sumB : sumR;
+        final c1Val = sumG;
+        final c2Val = isBgr ? sumR : sumB;
+
+        final c0Channel = isBgr ? 2 : 0;
+        final c1Channel = 1;
+        final c2Channel = isBgr ? 0 : 2;
+
+        final c0Norm = normalizePixel(
+          c0Val,
+          colorChannel: c0Channel,
+          scheme: normalizationScheme,
+        );
+        final c1Norm = normalizePixel(
+          c1Val,
+          colorChannel: c1Channel,
+          scheme: normalizationScheme,
+        );
+        final c2Norm = normalizePixel(
+          c2Val,
+          colorChannel: c2Channel,
+          scheme: normalizationScheme,
+        );
 
         if (useNchw) {
           tensor[spatialIdx] = c0Norm;

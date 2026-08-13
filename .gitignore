@@ -29,7 +29,7 @@ doc/
 .flutter-plugins-dependencies
 /build/
 /coverage/
-face-antispoof-onnx/
+face-antispoof-onnx/ 
 .agents/
 graphify-out
 skills-lock.json

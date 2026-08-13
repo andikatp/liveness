@@ -145,6 +145,7 @@ class PassiveLivenessPlugin : FlutterPlugin, MethodCallHandler {
             val outShape = outputTensor.shape()
             val numClasses = if (outShape.size >= 2) outShape[1] else 2
             val outputFloats = Array(1) { FloatArray(numClasses) }
+            val outputMap = HashMap<Int, Any>()
             outputMap[0] = outputFloats
 
             currentInterpreter.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputMap)

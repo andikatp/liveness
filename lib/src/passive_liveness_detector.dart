@@ -100,6 +100,7 @@ class PassiveLivenessDetector {
     String? assetPath,
     String? filePath,
     Uint8List? modelBytes,
+    ModelClassOrder classOrder = ModelClassOrder.realFirst,
   }) async {
     if (_isInitialized) return;
 
@@ -120,7 +121,7 @@ class PassiveLivenessDetector {
       }
     }
 
-    await _engine.loadModel(bytes);
+    await _engine.loadModel(bytes, classOrder: classOrder);
 
     LivenessLogger.logModelInit(
       inputShape: _engine.modelInputShape,
@@ -187,6 +188,9 @@ class PassiveLivenessDetector {
     bool enableColorSpaceAnalysis = true,
     bool enableHighResScreenAnalysis = true,
     bool enableMoireAnalysis = true,
+    bool? isBgr,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
+    bool? enableContrastStretch,
   }) {
     final buffer = LivenessImageBuffer.fromCameraImage(cameraImage);
     return detectLivenessFromBuffer(
@@ -202,6 +206,9 @@ class PassiveLivenessDetector {
       enableColorSpaceAnalysis: enableColorSpaceAnalysis,
       enableHighResScreenAnalysis: enableHighResScreenAnalysis,
       enableMoireAnalysis: enableMoireAnalysis,
+      isBgr: isBgr,
+      normalizationScheme: normalizationScheme,
+      enableContrastStretch: enableContrastStretch,
     );
   }
 
@@ -219,6 +226,9 @@ class PassiveLivenessDetector {
     bool enableColorSpaceAnalysis = true,
     bool enableHighResScreenAnalysis = true,
     bool enableMoireAnalysis = true,
+    bool? isBgr,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
+    bool? enableContrastStretch,
   }) async {
     final proximityGate = const FaceProximityGate();
     final textureAnalyzer = const LbpHogAnalyzer();
@@ -246,6 +256,7 @@ class PassiveLivenessDetector {
         boundingBox: rawBoundingBox,
         frameWidth: buffer.width,
         frameHeight: buffer.height,
+        rotation: rotation,
       );
       faceAreaRatio = gateResult.faceAreaRatio;
 
@@ -381,8 +392,10 @@ class PassiveLivenessDetector {
     final effectiveExpansion = (effectiveTargetSize == 80)
         ? 2.7
         : expansionFactor;
-    final effectiveIsBgr = (effectiveTargetSize == 80) ? true : false;
-    final effectiveContrastStretch = (effectiveTargetSize == 80) ? false : true;
+    final effectiveIsBgr =
+        isBgr ?? ((effectiveTargetSize == 80) ? true : false);
+    final effectiveContrastStretch =
+        enableContrastStretch ?? ((effectiveTargetSize == 80) ? false : false);
 
     final tensorData = ImagePreprocessor.preprocessBufferToTensor(
       buffer,
@@ -393,10 +406,11 @@ class PassiveLivenessDetector {
       targetSize: effectiveTargetSize,
       useNchw: effectiveUseNchw,
       isBgr: effectiveIsBgr,
+      normalizationScheme: normalizationScheme,
       enableContrastStretch: effectiveContrastStretch,
     );
 
-    LivenessLogger.logTensorStats(tensorData);
+    LivenessLogger.logTensorStats(tensorData, inputShape: modelInputShape);
 
     final logits = await _runInference(tensorData: tensorData);
     stopwatch.stop();
@@ -444,7 +458,8 @@ class PassiveLivenessDetector {
                 lbpRatio != null &&
                 lbpRatio < 0.25 &&
                 hogDominance != null &&
-                hogDominance >= 0.16));
+                hogDominance >= 0.16 &&
+                (laplacianDelta == null || laplacianDelta < 0.12)));
 
     // Balanced EMA Calculation:
     final currentRealProb = 1.0 / (1.0 + math.exp(spoofLogit - realLogit));
@@ -487,7 +502,7 @@ class PassiveLivenessDetector {
           chrominanceVar >= 85.0;
 
       final isEmissiveDisplayLighting =
-          chrominanceVar != null && chrominanceVar >= 60.0;
+          chrominanceVar != null && chrominanceVar >= 80.0;
 
       final isAnySpoofSignal =
           (isPrintSpoof && !hasNatural3DDepth) ||
@@ -502,8 +517,11 @@ class PassiveLivenessDetector {
                   isMoireSpoof ||
                   isScreenSubPixelGrid));
 
+      final isExtremeScreenGlare =
+          chrominanceVar != null && chrominanceVar >= 100.0;
+
       final isOverwhelmingNeuralReal =
-          rawResult.logitDiff >= 4.0 &&
+          rawResult.logitDiff >= (isExtremeScreenGlare ? 4.0 : 1.5) &&
           hasNatural3DDepth &&
           !isScreenSubPixelGrid;
 
@@ -576,6 +594,9 @@ class PassiveLivenessDetector {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    bool? isBgr,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
+    bool? enableContrastStretch,
   }) async {
     if (!isInitialized) {
       throw StateError(
@@ -624,6 +645,9 @@ class PassiveLivenessDetector {
       expansionFactor: expansionFactor,
       enableProximityGate:
           false, // Proximity gate is disabled for static image crops
+      isBgr: isBgr,
+      normalizationScheme: normalizationScheme,
+      enableContrastStretch: enableContrastStretch,
     );
   }
 
@@ -641,6 +665,9 @@ class PassiveLivenessDetector {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    bool? isBgr,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
+    bool? enableContrastStretch,
   }) async {
     final bytes = await file.readAsBytes();
     return detectLivenessFromImageBytes(
@@ -648,6 +675,9 @@ class PassiveLivenessDetector {
       boundingBox: boundingBox,
       threshold: threshold,
       expansionFactor: expansionFactor,
+      isBgr: isBgr,
+      normalizationScheme: normalizationScheme,
+      enableContrastStretch: enableContrastStretch,
     );
   }
 
