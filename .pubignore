@@ -10,3 +10,4 @@ skills-lock.json
 test/fixtures/
 test_output*.txt
 assets/best_model_old.tflite
+MODEL_INTEGRATION.md
