@@ -348,7 +348,7 @@ class ImagePreprocessor {
         final c2Val = isBgr ? sumR : sumB;
 
         final c0Channel = isBgr ? 2 : 0;
-        final c1Channel = 1;
+        const c1Channel = 1;
         final c2Channel = isBgr ? 0 : 2;
 
         final c0Norm = normalizePixel(
@@ -506,7 +506,7 @@ class ImagePreprocessor {
         final c2Val = isBgr ? sumR : sumB;
 
         final c0Channel = isBgr ? 2 : 0;
-        final c1Channel = 1;
+        const c1Channel = 1;
         final c2Channel = isBgr ? 0 : 2;
 
         final c0Norm = normalizePixel(

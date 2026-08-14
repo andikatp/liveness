@@ -236,11 +236,11 @@ class PassiveLivenessDetector {
     NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
     bool? enableContrastStretch,
   }) async {
-    final proximityGate = const FaceProximityGate();
-    final textureAnalyzer = const LbpHogAnalyzer();
-    final colorSpaceAnalyzer = const ColorSpaceAnalyzer();
-    final highResScreenAnalyzer = const HighResScreenAnalyzer();
-    final moireAnalyzer = const FftMoireAnalyzer();
+    const proximityGate = FaceProximityGate();
+    const textureAnalyzer = LbpHogAnalyzer();
+    const colorSpaceAnalyzer = ColorSpaceAnalyzer();
+    const highResScreenAnalyzer = HighResScreenAnalyzer();
+    const moireAnalyzer = FftMoireAnalyzer();
     if (!isInitialized) {
       throw StateError(
         'PassiveLivenessDetector is not initialized. Call initialize() first.',

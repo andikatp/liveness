@@ -236,7 +236,7 @@ void main() {
 
   group('Low-light detection & acceptance tests', () {
     test('LivenessResult correctly reflects meanLuminance and isLowLight', () {
-      final darkResult = LivenessResult(
+      const darkResult = LivenessResult(
         isReal: true,
         status: LivenessStatus.real,
         realScore: 0.9,

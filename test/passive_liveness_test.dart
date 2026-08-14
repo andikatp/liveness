@@ -46,7 +46,7 @@ void main() {
     test(
       'Exposes raw single-frame metrics correctly alongside smoothed metrics',
       () {
-        final result = LivenessResult(
+        const result = LivenessResult(
           isReal: false,
           status: LivenessStatus.spoof,
           realScore: 0.4,
@@ -229,7 +229,7 @@ void main() {
         );
 
         expect(tensorNchw.length, equals(49152));
-        final hw = 128 * 128;
+        const hw = 128 * 128;
         expect(tensorNchw[0], equals(1.0)); // Channel 0 (R: 255/255)
         expect(
           tensorNchw[hw],
@@ -316,7 +316,7 @@ void main() {
 
     test('saveTensorToDisk writes valid PPM image file to disk', () async {
       final tensor = Float32List(1 * 128 * 128 * 3);
-      final hw = 128 * 128;
+      const hw = 128 * 128;
       // Set R channel to 1.0 for NCHW tensor
       for (int i = 0; i < hw; i++) {
         tensor[i] = 1.0; // R
@@ -485,7 +485,7 @@ void main() {
           isBgr: true,
         );
 
-        final hw = 10 * 10;
+        const hw = 10 * 10;
         expect(tensorBgr[0], equals(1.0)); // Channel 0 is B (255/255)
         expect(
           tensorBgr[hw],
@@ -528,7 +528,7 @@ void main() {
           normalizationScheme: NormalizationScheme.minusOneToOne,
         );
 
-        final hw = 10 * 10;
+        const hw = 10 * 10;
         // R = 0 -> (0 - 127.5)/127.5 = -1.0
         expect(tensorMinusOne[0], closeTo(-1.0, 1e-3));
         // G = 128 -> (128 - 127.5)/127.5 = ~0.0039

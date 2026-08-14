@@ -85,8 +85,8 @@ class LbpHogAnalyzer {
     int totalLbpEvaluated = 0;
 
     // 8-neighbor offsets: (dx, dy)
-    final dx = const [-1, 0, 1, 1, 1, 0, -1, -1];
-    final dy = const [-1, -1, -1, 0, 1, 1, 1, 0];
+    const dx = [-1, 0, 1, 1, 1, 0, -1, -1];
+    const dy = [-1, -1, -1, 0, 1, 1, 1, 0];
 
     // 1. Calculate LBP histogram with Specular Glare Masking
     for (int y = 1; y < height - 1; y++) {
