@@ -69,7 +69,7 @@ class LivenessLogger {
     );
   }
 
-  /// Log inference logits, softmax scores, EMA smoothing, threshold, and time.
+  /// Log inference logits, softmax scores, EMA smoothing, threshold, luminance, and time.
   static void logInferenceResult({
     required double realLogit,
     required double spoofLogit,
@@ -80,13 +80,18 @@ class LivenessLogger {
     required LivenessStatus status,
     required double threshold,
     required Duration inferenceTime,
+    double? meanLuminance,
+    bool isLowLight = false,
   }) {
     if (!enableLogging) return;
     final emaStr = emaRealScore != null
         ? emaRealScore.toStringAsFixed(4)
         : 'none';
+    final lumaStr = meanLuminance != null
+        ? ' | Luma: ${meanLuminance.toStringAsFixed(1)}${isLowLight ? " (LowLight)" : ""}'
+        : '';
     log(
-      'Inference Result -> Logits: [real: ${realLogit.toStringAsFixed(4)}, spoof: ${spoofLogit.toStringAsFixed(4)}] | LogitDiff: ${logitDiff.toStringAsFixed(4)} | CurrentProb: ${currentRealProb.toStringAsFixed(4)} | EMA: $emaStr | Status: ${status.name.toUpperCase()} (isReal: $isReal, threshold: ${threshold.toStringAsFixed(2)}) | Time: ${inferenceTime.inMilliseconds}ms',
+      'Inference Result -> Logits: [real: ${realLogit.toStringAsFixed(4)}, spoof: ${spoofLogit.toStringAsFixed(4)}] | LogitDiff: ${logitDiff.toStringAsFixed(4)} | CurrentProb: ${currentRealProb.toStringAsFixed(4)} | EMA: $emaStr$lumaStr | Status: ${status.name.toUpperCase()} (isReal: $isReal, threshold: ${threshold.toStringAsFixed(2)}) | Time: ${inferenceTime.inMilliseconds}ms',
     );
   }
 

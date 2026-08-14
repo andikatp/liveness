@@ -36,6 +36,9 @@ class PassiveLivenessDetector {
   /// Default Exponential Moving Average (EMA) alpha for score smoothing.
   static const double defaultEmaAlpha = 0.3;
 
+  /// Default recommended luminance threshold (0..255) for low-light face auto-acceptance.
+  static const double defaultLowLightThreshold = 70.0;
+
   final NativeLivenessEngine _engine = NativeLivenessEngine();
 
   /// Creates a new [PassiveLivenessDetector] instance.
@@ -100,6 +103,7 @@ class PassiveLivenessDetector {
     String? assetPath,
     String? filePath,
     Uint8List? modelBytes,
+    ModelClassOrder classOrder = ModelClassOrder.realFirst,
   }) async {
     if (_isInitialized) return;
 
@@ -120,7 +124,7 @@ class PassiveLivenessDetector {
       }
     }
 
-    await _engine.loadModel(bytes);
+    await _engine.loadModel(bytes, classOrder: classOrder);
 
     LivenessLogger.logModelInit(
       inputShape: _engine.modelInputShape,
@@ -187,6 +191,10 @@ class PassiveLivenessDetector {
     bool enableColorSpaceAnalysis = true,
     bool enableHighResScreenAnalysis = true,
     bool enableMoireAnalysis = true,
+    double? lowLightThreshold,
+    bool? isBgr,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
+    bool? enableContrastStretch,
   }) {
     final buffer = LivenessImageBuffer.fromCameraImage(cameraImage);
     return detectLivenessFromBuffer(
@@ -202,6 +210,10 @@ class PassiveLivenessDetector {
       enableColorSpaceAnalysis: enableColorSpaceAnalysis,
       enableHighResScreenAnalysis: enableHighResScreenAnalysis,
       enableMoireAnalysis: enableMoireAnalysis,
+      lowLightThreshold: lowLightThreshold,
+      isBgr: isBgr,
+      normalizationScheme: normalizationScheme,
+      enableContrastStretch: enableContrastStretch,
     );
   }
 
@@ -219,6 +231,10 @@ class PassiveLivenessDetector {
     bool enableColorSpaceAnalysis = true,
     bool enableHighResScreenAnalysis = true,
     bool enableMoireAnalysis = true,
+    double? lowLightThreshold,
+    bool? isBgr,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
+    bool? enableContrastStretch,
   }) async {
     final proximityGate = const FaceProximityGate();
     final textureAnalyzer = const LbpHogAnalyzer();
@@ -239,6 +255,35 @@ class PassiveLivenessDetector {
       isRotatedBoundingBox: isRotatedBoundingBox,
     );
 
+    Uint8List? cachedHighResCrop;
+    Uint8List getHighResCrop() {
+      return cachedHighResCrop ??= ImagePreprocessor.extractHighResCrop(
+        buffer,
+        boundingBox: boundingBox,
+        rotation: rotation,
+        isRotatedBoundingBox: isRotatedBoundingBox,
+      );
+    }
+
+    // Measure mean luminance (brightness) of the face crop
+    final faceCrop = getHighResCrop();
+    double sumLuma = 0.0;
+    for (int i = 0; i < faceCrop.length; i++) {
+      sumLuma += faceCrop[i];
+    }
+    final meanLuminance = faceCrop.isNotEmpty
+        ? sumLuma / faceCrop.length
+        : null;
+    final effectiveLowLightThreshold = lowLightThreshold != null
+        ? (lowLightThreshold <= 1.0
+            ? lowLightThreshold * 255.0
+            : lowLightThreshold)
+        : null;
+    final isLowLight =
+        effectiveLowLightThreshold != null &&
+        meanLuminance != null &&
+        meanLuminance < effectiveLowLightThreshold;
+
     // 1. Proximity & Aspect Ratio Gate Check
     double? faceAreaRatio;
     if (enableProximityGate && rawBoundingBox != null) {
@@ -246,6 +291,7 @@ class PassiveLivenessDetector {
         boundingBox: rawBoundingBox,
         frameWidth: buffer.width,
         frameHeight: buffer.height,
+        rotation: rotation,
       );
       faceAreaRatio = gateResult.faceAreaRatio;
 
@@ -254,6 +300,8 @@ class PassiveLivenessDetector {
         return LivenessResult.pending(
           threshold: threshold,
           status: gateResult.status,
+          meanLuminance: meanLuminance,
+          isLowLight: isLowLight,
         );
       }
     }
@@ -265,12 +313,7 @@ class PassiveLivenessDetector {
     bool isScreenGridSpoof = false;
 
     if (enableTextureAnalysis) {
-      final highResCrop = ImagePreprocessor.extractHighResCrop(
-        buffer,
-        boundingBox: boundingBox,
-        rotation: rotation,
-        isRotatedBoundingBox: isRotatedBoundingBox,
-      );
+      final highResCrop = getHighResCrop();
       final textureResult = textureAnalyzer.analyzeGrayscaleCrop(
         highResCrop,
         256,
@@ -299,12 +342,14 @@ class PassiveLivenessDetector {
       isEmissiveSaturationSpoof = colorResult.isEmissiveSaturationSpoof;
     }
 
-    // Flat paper print photo attack detection (low chrominance variance + LBP degradation):
+    // Flat paper print photo attack detection (low chrominance variance + LBP degradation + HOG halftone grid):
     if (lbpRatio != null &&
         lbpRatio < 0.250 &&
         chrominanceVar != null &&
         chrominanceVar >= 50.0 &&
-        chrominanceVar < 80.0) {
+        chrominanceVar < 80.0 &&
+        hogDominance != null &&
+        hogDominance >= 0.160) {
       isPrintSpoof = true;
     }
 
@@ -316,12 +361,7 @@ class PassiveLivenessDetector {
     double? laplacianDelta;
 
     if (enableHighResScreenAnalysis) {
-      final highResCrop = ImagePreprocessor.extractHighResCrop(
-        buffer,
-        boundingBox: boundingBox,
-        rotation: rotation,
-        isRotatedBoundingBox: isRotatedBoundingBox,
-      );
+      final highResCrop = getHighResCrop();
       final highResResult = highResScreenAnalyzer.analyzeGrayscaleCrop(
         highResCrop,
         256,
@@ -349,12 +389,7 @@ class PassiveLivenessDetector {
     bool isMoireSpoof = false;
 
     if (enableMoireAnalysis) {
-      final highResCrop = ImagePreprocessor.extractHighResCrop(
-        buffer,
-        boundingBox: boundingBox,
-        rotation: rotation,
-        isRotatedBoundingBox: isRotatedBoundingBox,
-      );
+      final highResCrop = getHighResCrop();
       final moireResult = moireAnalyzer.analyzeGrayscaleCrop(
         highResCrop,
         256,
@@ -378,19 +413,28 @@ class PassiveLivenessDetector {
     final effectiveUseNchw = isNativeNchw;
     final effectiveTargetSize = modelTargetSize;
 
+    final effectiveExpansion = (effectiveTargetSize == 80)
+        ? 2.7
+        : expansionFactor;
+    final effectiveIsBgr =
+        isBgr ?? ((effectiveTargetSize == 80) ? true : false);
+    final effectiveContrastStretch =
+        enableContrastStretch ?? ((effectiveTargetSize == 80) ? false : false);
+
     final tensorData = ImagePreprocessor.preprocessBufferToTensor(
       buffer,
       boundingBox: boundingBox,
       rotation: rotation,
       isRotatedBoundingBox: isRotatedBoundingBox,
-      expansionFactor: expansionFactor,
+      expansionFactor: effectiveExpansion,
       targetSize: effectiveTargetSize,
       useNchw: effectiveUseNchw,
-      isBgr: false,
-      enableContrastStretch: true,
+      isBgr: effectiveIsBgr,
+      normalizationScheme: normalizationScheme,
+      enableContrastStretch: effectiveContrastStretch,
     );
 
-    LivenessLogger.logTensorStats(tensorData);
+    LivenessLogger.logTensorStats(tensorData, inputShape: modelInputShape);
 
     final logits = await _runInference(tensorData: tensorData);
     stopwatch.stop();
@@ -413,6 +457,8 @@ class PassiveLivenessDetector {
       laplacianDelta: laplacianDelta,
       saturationVariance: saturationVar,
       moireHighFreqRatio: moireHighFreqRatio,
+      meanLuminance: meanLuminance,
+      isLowLight: isLowLight,
     );
 
     final isBorderlineScreenReplaySpoof =
@@ -420,8 +466,9 @@ class PassiveLivenessDetector {
         ((chrominanceVar >= 110.0 &&
                 lbpRatio != null &&
                 lbpRatio < 0.310 &&
-                laplacianDelta != null &&
-                laplacianDelta < 0.300) ||
+                hogDominance != null &&
+                hogDominance >= 0.170 &&
+                rawResult.logitDiff < 5.0) ||
             (chrominanceVar >= 100.0 &&
                 hogDominance != null &&
                 hogDominance >= 0.170 &&
@@ -458,31 +505,72 @@ class PassiveLivenessDetector {
     final spoofScoreEma = 1.0 - safeEma;
     final smoothedDiff = math.log(safeEma / (1.0 - safeEma));
 
-    LivenessStatus calculatedStatus = (smoothedDiff >= threshold)
+    final isThresholdPassed = (threshold > 0.0 && threshold < 1.0)
+        ? (safeEma >= threshold)
+        : (smoothedDiff >= threshold);
+
+    LivenessStatus calculatedStatus = isThresholdPassed
         ? LivenessStatus.real
         : LivenessStatus.spoof;
 
+    // Low-Light Auto-Acceptance Safeguard:
+    // When lowLightThreshold is provided and face luminance is below it, auto-accept as real.
+    if (isLowLight) {
+      calculatedStatus = LivenessStatus.real;
+    }
+
     // Multi-Factor Decision Fusion Engine:
     // Any calibrated physical spoof indicator overrides neural real score.
-    if (calculatedStatus == LivenessStatus.real) {
+    if (calculatedStatus == LivenessStatus.real && !isLowLight) {
+      final isScreenSubPixelGrid =
+          hogDominance != null &&
+          hogDominance >= 0.320 &&
+          lbpRatio != null &&
+          lbpRatio < 0.280 &&
+          chrominanceVar != null &&
+          chrominanceVar >= 110.0;
+
+      final isEmissiveDisplayLighting =
+          chrominanceVar != null && chrominanceVar >= 80.0;
+
       final isAnySpoofSignal =
           isPrintSpoof ||
-          isScreenGridSpoof ||
-          isScreenReplaySpoof ||
-          isHighResScreenSpoof ||
-          isEmissiveScreenSpoof ||
-          isBorderlineScreenReplaySpoof ||
-          is2DFlatSpoof ||
-          isEmissiveSaturationSpoof ||
-          isMoireSpoof;
+          (isEmissiveDisplayLighting &&
+              (isScreenGridSpoof ||
+                  isScreenReplaySpoof ||
+                  isHighResScreenSpoof ||
+                  isEmissiveScreenSpoof ||
+                  isBorderlineScreenReplaySpoof ||
+                  is2DFlatSpoof ||
+                  isEmissiveSaturationSpoof ||
+                  isMoireSpoof ||
+                  isScreenSubPixelGrid));
 
-      if (isAnySpoofSignal) {
+      // Overwhelming neural certainty safeguard:
+      // When the neural network is confident (rawResult.logitDiff >= 3.5 && rawResult.realLogit >= 1.5),
+      // prioritize genuine real users and do not allow soft micro-texture (HOG/LBP/Chrominance/2D flatness)
+      // to cause false rejections. Only extreme, unequivocal physical attack signals (emissive saturation
+      // spikes, extreme moiré fringes, or high-energy glass reflections) can override high neural confidence.
+      final isExtremeAttackSignal =
+          isEmissiveSaturationSpoof ||
+          isMoireSpoof ||
+          (isEmissiveScreenSpoof &&
+              specularRatio != null &&
+              specularRatio >= 0.020);
+
+      final isConfidentNeuralReal =
+          rawResult.logitDiff >= 3.5 &&
+          rawResult.realLogit >= 1.5 &&
+          !isExtremeAttackSignal;
+
+      if (isAnySpoofSignal && !isConfidentNeuralReal) {
         if (isPrintSpoof &&
             !isHighResScreenSpoof &&
             !isEmissiveScreenSpoof &&
             !isScreenGridSpoof &&
             !isScreenReplaySpoof &&
-            !isBorderlineScreenReplaySpoof) {
+            !isBorderlineScreenReplaySpoof &&
+            !isScreenSubPixelGrid) {
           calculatedStatus = LivenessStatus.printSpoof;
         } else {
           calculatedStatus = LivenessStatus.screenReplaySpoof;
@@ -512,6 +600,8 @@ class PassiveLivenessDetector {
       laplacianDelta: laplacianDelta,
       saturationVariance: saturationVar,
       moireHighFreqRatio: moireHighFreqRatio,
+      meanLuminance: meanLuminance,
+      isLowLight: isLowLight,
     );
 
     LivenessLogger.logInferenceResult(
@@ -524,6 +614,8 @@ class PassiveLivenessDetector {
       status: result.status,
       threshold: threshold,
       inferenceTime: stopwatch.elapsed,
+      meanLuminance: meanLuminance,
+      isLowLight: isLowLight,
     );
 
     return result;
@@ -539,11 +631,16 @@ class PassiveLivenessDetector {
   /// - [boundingBox]: Optional facial bounding box from a face detector. If `null`, the full image is evaluated.
   /// - [threshold]: Logit decision threshold (default `0.0`). Positive values demand higher neural model confidence.
   /// - [expansionFactor]: Square crop margin around face bounding box (default `1.5x`).
+  /// - [lowLightThreshold]: When specified (e.g. `55.0`), frames with mean luminance below this threshold are auto-accepted as live.
   Future<LivenessResult> detectLivenessFromImageBytes(
     Uint8List imageBytes, {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    double? lowLightThreshold,
+    bool? isBgr,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
+    bool? enableContrastStretch,
   }) async {
     if (!isInitialized) {
       throw StateError(
@@ -592,6 +689,10 @@ class PassiveLivenessDetector {
       expansionFactor: expansionFactor,
       enableProximityGate:
           false, // Proximity gate is disabled for static image crops
+      lowLightThreshold: lowLightThreshold,
+      isBgr: isBgr,
+      normalizationScheme: normalizationScheme,
+      enableContrastStretch: enableContrastStretch,
     );
   }
 
@@ -604,11 +705,16 @@ class PassiveLivenessDetector {
   /// - [boundingBox]: Optional facial bounding box from a face detector. If `null`, the full image is evaluated.
   /// - [threshold]: Logit decision threshold (default `0.0`). Positive values demand higher neural model confidence.
   /// - [expansionFactor]: Square crop margin around face bounding box (default `1.5x`).
+  /// - [lowLightThreshold]: When specified (e.g. `55.0`), frames with mean luminance below this threshold are auto-accepted as live.
   Future<LivenessResult> detectLivenessFromImageFile(
     File file, {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    double? lowLightThreshold,
+    bool? isBgr,
+    NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
+    bool? enableContrastStretch,
   }) async {
     final bytes = await file.readAsBytes();
     return detectLivenessFromImageBytes(
@@ -616,6 +722,10 @@ class PassiveLivenessDetector {
       boundingBox: boundingBox,
       threshold: threshold,
       expansionFactor: expansionFactor,
+      lowLightThreshold: lowLightThreshold,
+      isBgr: isBgr,
+      normalizationScheme: normalizationScheme,
+      enableContrastStretch: enableContrastStretch,
     );
   }
 

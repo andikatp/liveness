@@ -64,6 +64,7 @@ class FaceProximityGate {
     required FaceBoundingBox boundingBox,
     required int frameWidth,
     required int frameHeight,
+    int rotation = 0,
   }) {
     if (frameWidth <= 0 || frameHeight <= 0) {
       return const FaceGateResult(
@@ -78,8 +79,14 @@ class FaceProximityGate {
     final faceArea = (boundingBox.width * boundingBox.height).abs();
     final faceAreaRatio = (faceArea / frameArea).clamp(0.0, 1.0);
 
-    final safeHeight = boundingBox.height > 0 ? boundingBox.height : 1.0;
-    final aspectRatio = boundingBox.width / safeHeight;
+    final normRotation = ((rotation % 360) + 360) % 360;
+    final isTransposed = normRotation == 90 || normRotation == 270;
+
+    final uprightWidth = isTransposed ? boundingBox.height : boundingBox.width;
+    final uprightHeight = isTransposed ? boundingBox.width : boundingBox.height;
+
+    final safeHeight = uprightHeight > 0 ? uprightHeight : 1.0;
+    final aspectRatio = uprightWidth / safeHeight;
 
     if (faceAreaRatio < minFaceAreaRatio) {
       return FaceGateResult(

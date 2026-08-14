@@ -115,13 +115,8 @@ public class PassiveLivenessPlugin: NSObject, FlutterPlugin {
                 return Array(buffer)
             }
 
-            if outputFloats.count >= 2 {
-                let realLogit = Double(outputFloats[0])
-                let spoofLogit = Double(outputFloats[1])
-                result([realLogit, spoofLogit])
-            } else {
-                result([0.0, 0.0])
-            }
+            let doubleList = outputFloats.map { Double($0) }
+            result(doubleList)
         } catch {
             result(FlutterError(code: "INFERENCE_FAILED", message: "Native inference execution error: \(error.localizedDescription)", details: nil))
         }

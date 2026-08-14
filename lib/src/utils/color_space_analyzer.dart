@@ -40,14 +40,14 @@ class ColorSpaceAnalysisResult {
 /// Evaluates YCbCr / YUV chrominance sub-sampling metrics ($\sigma^2_{CbCr}$)
 /// to detect emissive RGB digital display screen replay attacks.
 class ColorSpaceAnalyzer {
-  /// Upper bound threshold for chrominance variance (default: 160.0). Higher values indicate screen sub-pixel dispersion.
+  /// Upper bound threshold for chrominance variance (default: 380.0). Higher values indicate screen sub-pixel dispersion.
   final double maxVarianceThreshold;
 
   /// Lower bound threshold for chrominance variance (default: 0.5). Extremely low values indicate flat monochrome / synthetic photos.
   final double minVarianceThreshold;
 
   const ColorSpaceAnalyzer({
-    this.maxVarianceThreshold = 160.0,
+    this.maxVarianceThreshold = 380.0,
     this.minVarianceThreshold = 0.5,
   });
 
@@ -76,11 +76,18 @@ class ColorSpaceAnalyzer {
     int endY = height;
 
     if (boundingBox != null) {
-      // Analyze only within the face region to avoid false positives from colorful backgrounds
-      startX = math.max(0, boundingBox.x.toInt());
-      startY = math.max(0, boundingBox.y.toInt());
-      endX = math.min(width, (boundingBox.x + boundingBox.width).ceil());
-      endY = math.min(height, (boundingBox.y + boundingBox.height).ceil());
+      // Analyze within the face region to avoid false positives from colorful backgrounds
+      final bX = math.max(0, boundingBox.x.toInt());
+      final bY = math.max(0, boundingBox.y.toInt());
+      final bW = math.min(width, (boundingBox.x + boundingBox.width).ceil());
+      final bH = math.min(height, (boundingBox.y + boundingBox.height).ceil());
+
+      if (bX < bW && bY < bH) {
+        startX = bX;
+        startY = bY;
+        endX = bW;
+        endY = bH;
+      }
     }
 
     final isBgra = buffer.format == LivenessImageFormat.bgra8888;
@@ -138,22 +145,29 @@ class ColorSpaceAnalyzer {
       }
     } else {
       // YUV420 / NV21 buffer planes
+      final plane0 = buffer.planes[0].bytes;
+      final p0Stride = buffer.planes[0].bytesPerRow;
+
       final plane1 = buffer.planes.length > 1 ? buffer.planes[1].bytes : null;
       final plane2 = buffer.planes.length > 2 ? buffer.planes[2].bytes : null;
 
-      if (plane1 != null) {
-        final uvStride = buffer.planes[1].bytesPerRow;
-        final uvPixelStride = buffer.planes[1].bytesPerPixel ?? 1;
+      final uvStride =
+          buffer.planes.length > 1 ? buffer.planes[1].bytesPerRow : p0Stride;
+      final uvPixelStride = buffer.planes.length > 1
+          ? (buffer.planes[1].bytesPerPixel ?? 1)
+          : 2;
 
-        for (int y = startY; y < endY; y += step) {
-          final uvRow = (y >> 1) * uvStride;
-          for (int x = startX; x < endX; x += step) {
-            final uvCol = x >> 1;
+      for (int y = startY; y < endY; y += step) {
+        final yIdxBase = y * p0Stride;
+        final uvRow = (y >> 1) * uvStride;
+
+        for (int x = startX; x < endX; x += step) {
+          final uvCol = x >> 1;
+          int uVal = 128;
+          int vVal = 128;
+
+          if (plane1 != null) {
             final uvOff = uvRow + uvCol * uvPixelStride;
-
-            int uVal = 128;
-            int vVal = 128;
-
             if (uvPixelStride == 2 && uvOff + 1 < plane1.length) {
               if (buffer.format == LivenessImageFormat.nv21) {
                 vVal = plane1[uvOff];
@@ -173,16 +187,46 @@ class ColorSpaceAnalyzer {
                 vVal = plane2[uvOff];
               }
             }
-
-            final cb = uVal.toDouble();
-            final cr = vVal.toDouble();
-
-            cbList[sampleCount] = cb;
-            crList[sampleCount] = cr;
-            sumCb += cb;
-            sumCr += cr;
-            sampleCount++;
+          } else if (plane0.length >= width * height * 3 ~/ 2) {
+            // Packed single-plane NV21 / NV12 in plane0
+            final uvOff =
+                p0Stride * height + (y >> 1) * p0Stride + (uvCol << 1);
+            if (uvOff + 1 < plane0.length) {
+              if (buffer.format == LivenessImageFormat.nv21) {
+                vVal = plane0[uvOff];
+                uVal = plane0[uvOff + 1];
+              } else {
+                uVal = plane0[uvOff];
+                vVal = plane0[uvOff + 1];
+              }
+            }
           }
+
+          final cb = uVal.toDouble();
+          final cr = vVal.toDouble();
+
+          // Calculate BT.601 YUV -> RGB -> HSV Saturation
+          final yIdx = yIdxBase + x;
+          final yVal =
+              (yIdx < plane0.length) ? plane0[yIdx].toDouble() : 128.0;
+          final u = cb - 128.0;
+          final v = cr - 128.0;
+
+          final r = (yVal + 1.402 * v).clamp(0.0, 255.0);
+          final g = (yVal - 0.344136 * u - 0.714136 * v).clamp(0.0, 255.0);
+          final b = (yVal + 1.772 * u).clamp(0.0, 255.0);
+
+          final maxC = math.max(r, math.max(g, b));
+          final minC = math.min(r, math.min(g, b));
+          final sat = maxC > 0.0 ? (maxC - minC) / maxC : 0.0;
+
+          cbList[sampleCount] = cb;
+          crList[sampleCount] = cr;
+          satList[sampleCount] = sat;
+          sumCb += cb;
+          sumCr += cr;
+          sumSat += sat;
+          sampleCount++;
         }
       }
     }

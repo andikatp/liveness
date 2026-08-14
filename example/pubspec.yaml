@@ -3,7 +3,7 @@ description: "Example application demonstrating passive face liveness detection 
 publish_to: "none"
 
 environment:
-  sdk: ^3.12.2
+  sdk: ^3.13.0
   flutter: ">=3.3.0"
 
 dependencies:

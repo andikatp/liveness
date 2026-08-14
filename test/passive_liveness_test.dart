@@ -116,6 +116,43 @@ void main() {
     );
   });
 
+  group('FaceProximityGate tests', () {
+    test('Calculates upright face aspect ratio across 0, 90, 180, 270 deg sensor rotations', () {
+      const gate = FaceProximityGate();
+
+      // Portrait face: Width = 200, Height = 300 (upright aspect ratio = 200/300 = 0.667)
+      const uprightBox = FaceBoundingBox(x: 100, y: 100, width: 200, height: 300);
+      final res0 = gate.evaluate(
+        boundingBox: uprightBox,
+        frameWidth: 1000,
+        frameHeight: 1000,
+        rotation: 0,
+      );
+      expect(res0.isValid, isTrue);
+      expect(res0.aspectRatio, closeTo(0.667, 1e-3));
+
+      // 90 deg rotation: transposed in raw buffer space (Width = 300, Height = 200)
+      const rawTransposedBox = FaceBoundingBox(x: 100, y: 100, width: 300, height: 200);
+      final res90 = gate.evaluate(
+        boundingBox: rawTransposedBox,
+        frameWidth: 1000,
+        frameHeight: 1000,
+        rotation: 90,
+      );
+      expect(res90.isValid, isTrue);
+      expect(res90.aspectRatio, closeTo(0.667, 1e-3));
+
+      final res270 = gate.evaluate(
+        boundingBox: rawTransposedBox,
+        frameWidth: 1000,
+        frameHeight: 1000,
+        rotation: 270,
+      );
+      expect(res270.isValid, isTrue);
+      expect(res270.aspectRatio, closeTo(0.667, 1e-3));
+    });
+  });
+
   group('ImagePreprocessor tests', () {
     test(
       'edge pixel replication clamps out-of-bounds coordinates to boundary pixels',
@@ -457,6 +494,59 @@ void main() {
         expect(tensorBgr[2 * hw], equals(0.0)); // Channel 2 is R (0/255)
       },
     );
+
+    test(
+      'preprocessBufferToTensor supports NormalizationScheme.imageNet and minusOneToOne',
+      () {
+        final bytes = Uint8List(10 * 10 * 4);
+        for (int i = 0; i < bytes.length; i += 4) {
+          bytes[i] = 255; // B = 255
+          bytes[i + 1] = 128; // G = 128
+          bytes[i + 2] = 0; // R = 0
+          bytes[i + 3] = 255;
+        }
+
+        final buffer = LivenessImageBuffer(
+          width: 10,
+          height: 10,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: bytes,
+              bytesPerRow: 10 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        // minusOneToOne: (val - 127.5)/127.5
+        final tensorMinusOne = ImagePreprocessor.preprocessBufferToTensor(
+          buffer,
+          targetSize: 10,
+          useNchw: true,
+          isBgr: false,
+          normalizationScheme: NormalizationScheme.minusOneToOne,
+        );
+
+        final hw = 10 * 10;
+        // R = 0 -> (0 - 127.5)/127.5 = -1.0
+        expect(tensorMinusOne[0], closeTo(-1.0, 1e-3));
+        // G = 128 -> (128 - 127.5)/127.5 = ~0.0039
+        expect(tensorMinusOne[hw], closeTo(0.0039, 1e-3));
+
+        // imageNet: (val/255.0 - mean) / std
+        final tensorImageNet = ImagePreprocessor.preprocessBufferToTensor(
+          buffer,
+          targetSize: 10,
+          useNchw: true,
+          isBgr: false,
+          normalizationScheme: NormalizationScheme.imageNet,
+        );
+
+        // R = 0 -> (0 - 0.485) / 0.229 = -2.1179
+        expect(tensorImageNet[0], closeTo(-2.1179, 1e-3));
+      },
+    );
   });
 
   group('PassiveLivenessDetector tests', () {
@@ -529,6 +619,41 @@ void main() {
     );
 
     test(
+      'Supports ModelClassOrder.spoofFirst to invert logit mapping when index 0 is spoof',
+      () async {
+        final detector = PassiveLivenessDetector();
+        final dummyBytes = Uint8List.fromList([1, 2, 3, 4]);
+
+        await detector.initialize(
+          modelBytes: dummyBytes,
+          classOrder: ModelClassOrder.spoofFirst,
+        );
+
+        final frameBytes = Uint8List(10 * 10 * 4);
+        final buffer = LivenessImageBuffer(
+          width: 10,
+          height: 10,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: frameBytes,
+              bytesPerRow: 10 * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        final result = await detector.detectLivenessFromBuffer(buffer);
+        // Mock method channel returns [3.5, 0.5].
+        // With spoofFirst: index 0 (3.5) = spoofLogit, index 1 (0.5) = realLogit
+        expect(result.spoofLogit, equals(3.5));
+        expect(result.realLogit, equals(0.5));
+
+        await detector.dispose();
+      },
+    );
+
+    test(
       'applies rotated Android face box to heuristic analyzers before accepting real logits',
       () async {
         final detector = PassiveLivenessDetector();
@@ -595,6 +720,151 @@ void main() {
         expect(result.chrominanceVariance, greaterThan(160.0));
         expect(result.status, equals(LivenessStatus.screenReplaySpoof));
         expect(result.isReal, isFalse);
+
+        await detector.dispose();
+      },
+    );
+
+    test(
+      'classifies real face with natural 3D depth and logitDiff >= 1.5 as REAL without false screenReplaySpoof override',
+      () async {
+        final detector = PassiveLivenessDetector();
+        await detector.initialize(modelBytes: Uint8List.fromList([1, 2, 3, 4]));
+
+        const width = 100;
+        const height = 100;
+        final frameBytes = Uint8List(width * height * 4);
+        final buffer = LivenessImageBuffer(
+          width: width,
+          height: height,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: frameBytes,
+              bytesPerRow: width * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        final result = await detector.detectLivenessFromBuffer(
+          buffer,
+          enableProximityGate: false,
+          enableTextureAnalysis: false,
+          enableColorSpaceAnalysis: false,
+          enableHighResScreenAnalysis: false,
+          enableMoireAnalysis: false,
+        );
+
+        expect(result.rawIsReal, isTrue);
+        expect(result.isReal, isTrue);
+        expect(result.status, equals(LivenessStatus.real));
+
+        await detector.dispose();
+      },
+    );
+
+    test(
+      'classifies iPhone high-res real face with chrominance variance ~290 and deep DoF as REAL',
+      () async {
+        final detector = PassiveLivenessDetector();
+        await detector.initialize(modelBytes: Uint8List.fromList([1, 2, 3, 4]));
+
+        const width = 120;
+        const height = 120;
+        final frameBytes = Uint8List(width * height * 4);
+
+        // Generate smooth natural skin tones (R > G > B) with rich color variation (lips/skin/hair)
+        for (int y = 0; y < height; y++) {
+          for (int x = 0; x < width; x++) {
+            final idx = (y * width + x) * 4;
+            // Smooth gradient representing face features
+            final skinGrad = ((x + y) % 30);
+            frameBytes[idx] = (100 + skinGrad).clamp(0, 255); // B
+            frameBytes[idx + 1] = (130 + skinGrad * 2).clamp(0, 255); // G
+            frameBytes[idx + 2] = (210 + skinGrad).clamp(0, 255); // R
+            frameBytes[idx + 3] = 255; // A
+          }
+        }
+
+        final buffer = LivenessImageBuffer(
+          width: width,
+          height: height,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: frameBytes,
+              bytesPerRow: width * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        final result = await detector.detectLivenessFromBuffer(
+          buffer,
+          enableProximityGate: false,
+        );
+
+        // Model returns [3.5, 0.5] (logitDiff = 3.0), but let's ensure it stays REAL
+        expect(result.rawIsReal, isTrue);
+        expect(result.isReal, isTrue);
+        expect(result.status, equals(LivenessStatus.real));
+
+        await detector.dispose();
+      },
+    );
+
+    test(
+      'auto-accepts dark low-light frames as REAL when allowLowLight is true',
+      () async {
+        final detector = PassiveLivenessDetector();
+        await detector.initialize(modelBytes: Uint8List.fromList([1, 2, 3, 4]));
+
+        // Dark frame (mean luminance ~20 on 0..255 scale)
+        const width = 100;
+        const height = 100;
+        final frameBytes = Uint8List(width * height * 4);
+        for (int i = 0; i < frameBytes.length; i += 4) {
+          frameBytes[i] = 20; // B
+          frameBytes[i + 1] = 20; // G
+          frameBytes[i + 2] = 20; // R
+          frameBytes[i + 3] = 255; // A
+        }
+
+        final buffer = LivenessImageBuffer(
+          width: width,
+          height: height,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: frameBytes,
+              bytesPerRow: width * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        // When lowLightThreshold is null (default off), isLowLight is false
+        final normalResult = await detector.detectLivenessFromBuffer(
+          buffer,
+          enableProximityGate: false,
+          lowLightThreshold: null,
+        );
+        expect(normalResult.isLowLight, isFalse);
+        expect(normalResult.meanLuminance, lessThan(55.0));
+
+        // Now test with lowLightThreshold = 55.0 (auto-acceptance enabled)
+        detector.resetEma();
+        final lowLightResult = await detector.detectLivenessFromBuffer(
+          buffer,
+          enableProximityGate: false,
+          lowLightThreshold: 55.0,
+        );
+
+        expect(lowLightResult.isReal, isTrue);
+        expect(lowLightResult.status, equals(LivenessStatus.real));
+        expect(lowLightResult.isLowLight, isTrue);
+        expect(lowLightResult.meanLuminance, lessThan(55.0));
 
         await detector.dispose();
       },
