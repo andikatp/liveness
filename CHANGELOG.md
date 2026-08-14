@@ -1,6 +1,9 @@
-## 0.0.7
+## 0.1.0
 
-- **Upgraded Multi-Modal Anti-Spoofing Heuristics & Decision Fusion**: Enhanced resilience against high-resolution OLED / Retina / MacBook screen replay attacks without increasing package size or native binary footprint. (Look, passive liveness is never 100% perfect, but it's significantly harder to spoof now!).
+- **Low-Light Face Liveness Auto-Acceptance (`lowLightThreshold`)**: Added configurable low-light auto-acceptance to eliminate false spoof rejections and errors in dark/dimly-lit environments (such as night shifts or low-light work spaces).
+  - **`lowLightThreshold` (`double?`, default `null`)**: When specified (e.g. `70.0` or `0.30`), frames captured with mean luminance below this threshold are automatically accepted as live (`isReal: true`, `status: LivenessStatus.real`), bypassing dark-induced neural logit suppression. Supports both 0..255 direct scale and normalized 0..1 scale.
+  - **Exposed Luminance Metrics**: `LivenessResult` provides `meanLuminance` ($0.0 \dots 255.0$) and `isLowLight` for diagnostic logging and UI display.
+- **Upgraded Multi-Modal Anti-Spoofing Heuristics & Decision Fusion**: Enhanced resilience against high-resolution OLED / Retina / MacBook screen replay attacks without increasing package size or native binary footprint.
   - **2D Flatness Check (`is2DFlatSpoof`)**: Evaluates Laplacian depth-of-field variance delta between center face crop ($\sigma^2_{\text{Face}}$) vs background region ($\sigma^2_{\text{Background}}$) to detect flat 2D focal planes ($\Delta < 0.08$).
   - **Emissive Saturation Spikes (`isEmissiveSaturationSpoof`)**: Converted color space crops to HSV to analyze Saturation ($S$) channel variance ($\text{varSat} \ge 0.045$) relative to Hue, identifying additive RGB display backlight scatter.
   - **Fast 2D Radix-2 FFT Moiré Analyzer (`FftMoireAnalyzer`)**: Pure Dart-only Cooley-Tukey FFT algorithm ($O(n \log n)$) to detect high-frequency sub-pixel display grid peaks ($\text{regularity} \ge 25.0$) beyond 60% Nyquist radius with zero binary size overhead.

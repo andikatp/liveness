@@ -813,5 +813,61 @@ void main() {
         await detector.dispose();
       },
     );
+
+    test(
+      'auto-accepts dark low-light frames as REAL when allowLowLight is true',
+      () async {
+        final detector = PassiveLivenessDetector();
+        await detector.initialize(modelBytes: Uint8List.fromList([1, 2, 3, 4]));
+
+        // Dark frame (mean luminance ~20 on 0..255 scale)
+        const width = 100;
+        const height = 100;
+        final frameBytes = Uint8List(width * height * 4);
+        for (int i = 0; i < frameBytes.length; i += 4) {
+          frameBytes[i] = 20; // B
+          frameBytes[i + 1] = 20; // G
+          frameBytes[i + 2] = 20; // R
+          frameBytes[i + 3] = 255; // A
+        }
+
+        final buffer = LivenessImageBuffer(
+          width: width,
+          height: height,
+          format: LivenessImageFormat.bgra8888,
+          planes: [
+            LivenessImagePlane(
+              bytes: frameBytes,
+              bytesPerRow: width * 4,
+              bytesPerPixel: 4,
+            ),
+          ],
+        );
+
+        // When lowLightThreshold is null (default off), isLowLight is false
+        final normalResult = await detector.detectLivenessFromBuffer(
+          buffer,
+          enableProximityGate: false,
+          lowLightThreshold: null,
+        );
+        expect(normalResult.isLowLight, isFalse);
+        expect(normalResult.meanLuminance, lessThan(55.0));
+
+        // Now test with lowLightThreshold = 55.0 (auto-acceptance enabled)
+        detector.resetEma();
+        final lowLightResult = await detector.detectLivenessFromBuffer(
+          buffer,
+          enableProximityGate: false,
+          lowLightThreshold: 55.0,
+        );
+
+        expect(lowLightResult.isReal, isTrue);
+        expect(lowLightResult.status, equals(LivenessStatus.real));
+        expect(lowLightResult.isLowLight, isTrue);
+        expect(lowLightResult.meanLuminance, lessThan(55.0));
+
+        await detector.dispose();
+      },
+    );
   });
 }

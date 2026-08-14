@@ -233,4 +233,30 @@ void main() {
       expect(controller.isFlashing, isFalse);
     });
   });
+
+  group('Low-light detection & acceptance tests', () {
+    test('LivenessResult correctly reflects meanLuminance and isLowLight', () {
+      final darkResult = LivenessResult(
+        isReal: true,
+        status: LivenessStatus.real,
+        realScore: 0.9,
+        spoofScore: 0.1,
+        realLogit: 2.0,
+        spoofLogit: -2.0,
+        logitDiff: 4.0,
+        confidence: 4.0,
+        threshold: 0.0,
+        inferenceTime: Duration.zero,
+        meanLuminance: 28.5,
+        isLowLight: true,
+      );
+
+      expect(darkResult.meanLuminance, equals(28.5));
+      expect(darkResult.isLowLight, isTrue);
+      expect(darkResult.toJson()['meanLuminance'], equals(28.5));
+      expect(darkResult.toJson()['isLowLight'], isTrue);
+      expect(darkResult.toString(), contains('luminance: 28.5'));
+      expect(darkResult.toString(), contains('isLowLight: true'));
+    });
+  });
 }

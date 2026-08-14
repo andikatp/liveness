@@ -36,6 +36,9 @@ class PassiveLivenessDetector {
   /// Default Exponential Moving Average (EMA) alpha for score smoothing.
   static const double defaultEmaAlpha = 0.3;
 
+  /// Default recommended luminance threshold (0..255) for low-light face auto-acceptance.
+  static const double defaultLowLightThreshold = 70.0;
+
   final NativeLivenessEngine _engine = NativeLivenessEngine();
 
   /// Creates a new [PassiveLivenessDetector] instance.
@@ -188,6 +191,7 @@ class PassiveLivenessDetector {
     bool enableColorSpaceAnalysis = true,
     bool enableHighResScreenAnalysis = true,
     bool enableMoireAnalysis = true,
+    double? lowLightThreshold,
     bool? isBgr,
     NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
     bool? enableContrastStretch,
@@ -206,6 +210,7 @@ class PassiveLivenessDetector {
       enableColorSpaceAnalysis: enableColorSpaceAnalysis,
       enableHighResScreenAnalysis: enableHighResScreenAnalysis,
       enableMoireAnalysis: enableMoireAnalysis,
+      lowLightThreshold: lowLightThreshold,
       isBgr: isBgr,
       normalizationScheme: normalizationScheme,
       enableContrastStretch: enableContrastStretch,
@@ -226,6 +231,7 @@ class PassiveLivenessDetector {
     bool enableColorSpaceAnalysis = true,
     bool enableHighResScreenAnalysis = true,
     bool enableMoireAnalysis = true,
+    double? lowLightThreshold,
     bool? isBgr,
     NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
     bool? enableContrastStretch,
@@ -249,6 +255,35 @@ class PassiveLivenessDetector {
       isRotatedBoundingBox: isRotatedBoundingBox,
     );
 
+    Uint8List? cachedHighResCrop;
+    Uint8List getHighResCrop() {
+      return cachedHighResCrop ??= ImagePreprocessor.extractHighResCrop(
+        buffer,
+        boundingBox: boundingBox,
+        rotation: rotation,
+        isRotatedBoundingBox: isRotatedBoundingBox,
+      );
+    }
+
+    // Measure mean luminance (brightness) of the face crop
+    final faceCrop = getHighResCrop();
+    double sumLuma = 0.0;
+    for (int i = 0; i < faceCrop.length; i++) {
+      sumLuma += faceCrop[i];
+    }
+    final meanLuminance = faceCrop.isNotEmpty
+        ? sumLuma / faceCrop.length
+        : null;
+    final effectiveLowLightThreshold = lowLightThreshold != null
+        ? (lowLightThreshold <= 1.0
+            ? lowLightThreshold * 255.0
+            : lowLightThreshold)
+        : null;
+    final isLowLight =
+        effectiveLowLightThreshold != null &&
+        meanLuminance != null &&
+        meanLuminance < effectiveLowLightThreshold;
+
     // 1. Proximity & Aspect Ratio Gate Check
     double? faceAreaRatio;
     if (enableProximityGate && rawBoundingBox != null) {
@@ -265,6 +300,8 @@ class PassiveLivenessDetector {
         return LivenessResult.pending(
           threshold: threshold,
           status: gateResult.status,
+          meanLuminance: meanLuminance,
+          isLowLight: isLowLight,
         );
       }
     }
@@ -276,12 +313,7 @@ class PassiveLivenessDetector {
     bool isScreenGridSpoof = false;
 
     if (enableTextureAnalysis) {
-      final highResCrop = ImagePreprocessor.extractHighResCrop(
-        buffer,
-        boundingBox: boundingBox,
-        rotation: rotation,
-        isRotatedBoundingBox: isRotatedBoundingBox,
-      );
+      final highResCrop = getHighResCrop();
       final textureResult = textureAnalyzer.analyzeGrayscaleCrop(
         highResCrop,
         256,
@@ -329,12 +361,7 @@ class PassiveLivenessDetector {
     double? laplacianDelta;
 
     if (enableHighResScreenAnalysis) {
-      final highResCrop = ImagePreprocessor.extractHighResCrop(
-        buffer,
-        boundingBox: boundingBox,
-        rotation: rotation,
-        isRotatedBoundingBox: isRotatedBoundingBox,
-      );
+      final highResCrop = getHighResCrop();
       final highResResult = highResScreenAnalyzer.analyzeGrayscaleCrop(
         highResCrop,
         256,
@@ -362,12 +389,7 @@ class PassiveLivenessDetector {
     bool isMoireSpoof = false;
 
     if (enableMoireAnalysis) {
-      final highResCrop = ImagePreprocessor.extractHighResCrop(
-        buffer,
-        boundingBox: boundingBox,
-        rotation: rotation,
-        isRotatedBoundingBox: isRotatedBoundingBox,
-      );
+      final highResCrop = getHighResCrop();
       final moireResult = moireAnalyzer.analyzeGrayscaleCrop(
         highResCrop,
         256,
@@ -435,6 +457,8 @@ class PassiveLivenessDetector {
       laplacianDelta: laplacianDelta,
       saturationVariance: saturationVar,
       moireHighFreqRatio: moireHighFreqRatio,
+      meanLuminance: meanLuminance,
+      isLowLight: isLowLight,
     );
 
     final isBorderlineScreenReplaySpoof =
@@ -489,9 +513,15 @@ class PassiveLivenessDetector {
         ? LivenessStatus.real
         : LivenessStatus.spoof;
 
+    // Low-Light Auto-Acceptance Safeguard:
+    // When lowLightThreshold is provided and face luminance is below it, auto-accept as real.
+    if (isLowLight) {
+      calculatedStatus = LivenessStatus.real;
+    }
+
     // Multi-Factor Decision Fusion Engine:
     // Any calibrated physical spoof indicator overrides neural real score.
-    if (calculatedStatus == LivenessStatus.real) {
+    if (calculatedStatus == LivenessStatus.real && !isLowLight) {
       final isScreenSubPixelGrid =
           hogDominance != null &&
           hogDominance >= 0.320 &&
@@ -524,7 +554,9 @@ class PassiveLivenessDetector {
       final isExtremeAttackSignal =
           isEmissiveSaturationSpoof ||
           isMoireSpoof ||
-          (isEmissiveScreenSpoof && specularRatio != null && specularRatio >= 0.020);
+          (isEmissiveScreenSpoof &&
+              specularRatio != null &&
+              specularRatio >= 0.020);
 
       final isConfidentNeuralReal =
           rawResult.logitDiff >= 3.5 &&
@@ -568,6 +600,8 @@ class PassiveLivenessDetector {
       laplacianDelta: laplacianDelta,
       saturationVariance: saturationVar,
       moireHighFreqRatio: moireHighFreqRatio,
+      meanLuminance: meanLuminance,
+      isLowLight: isLowLight,
     );
 
     LivenessLogger.logInferenceResult(
@@ -580,6 +614,8 @@ class PassiveLivenessDetector {
       status: result.status,
       threshold: threshold,
       inferenceTime: stopwatch.elapsed,
+      meanLuminance: meanLuminance,
+      isLowLight: isLowLight,
     );
 
     return result;
@@ -595,11 +631,13 @@ class PassiveLivenessDetector {
   /// - [boundingBox]: Optional facial bounding box from a face detector. If `null`, the full image is evaluated.
   /// - [threshold]: Logit decision threshold (default `0.0`). Positive values demand higher neural model confidence.
   /// - [expansionFactor]: Square crop margin around face bounding box (default `1.5x`).
+  /// - [lowLightThreshold]: When specified (e.g. `55.0`), frames with mean luminance below this threshold are auto-accepted as live.
   Future<LivenessResult> detectLivenessFromImageBytes(
     Uint8List imageBytes, {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    double? lowLightThreshold,
     bool? isBgr,
     NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
     bool? enableContrastStretch,
@@ -651,6 +689,7 @@ class PassiveLivenessDetector {
       expansionFactor: expansionFactor,
       enableProximityGate:
           false, // Proximity gate is disabled for static image crops
+      lowLightThreshold: lowLightThreshold,
       isBgr: isBgr,
       normalizationScheme: normalizationScheme,
       enableContrastStretch: enableContrastStretch,
@@ -666,11 +705,13 @@ class PassiveLivenessDetector {
   /// - [boundingBox]: Optional facial bounding box from a face detector. If `null`, the full image is evaluated.
   /// - [threshold]: Logit decision threshold (default `0.0`). Positive values demand higher neural model confidence.
   /// - [expansionFactor]: Square crop margin around face bounding box (default `1.5x`).
+  /// - [lowLightThreshold]: When specified (e.g. `55.0`), frames with mean luminance below this threshold are auto-accepted as live.
   Future<LivenessResult> detectLivenessFromImageFile(
     File file, {
     FaceBoundingBox? boundingBox,
     double threshold = 0.0,
     double expansionFactor = ImagePreprocessor.defaultExpansionFactor,
+    double? lowLightThreshold,
     bool? isBgr,
     NormalizationScheme normalizationScheme = NormalizationScheme.zeroToOne,
     bool? enableContrastStretch,
@@ -681,6 +722,7 @@ class PassiveLivenessDetector {
       boundingBox: boundingBox,
       threshold: threshold,
       expansionFactor: expansionFactor,
+      lowLightThreshold: lowLightThreshold,
       isBgr: isBgr,
       normalizationScheme: normalizationScheme,
       enableContrastStretch: enableContrastStretch,

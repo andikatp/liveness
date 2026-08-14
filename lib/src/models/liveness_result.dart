@@ -96,6 +96,12 @@ class LivenessResult {
   /// High values ($\ge 0.35$) with structural regularity peaks indicate screen moiré.
   final double? moireHighFreqRatio;
 
+  /// Mean luminance (brightness) level of the analyzed face crop ($0.0 \dots 255.0$).
+  final double? meanLuminance;
+
+  /// Whether the frame was captured under low-light conditions (below the configured threshold).
+  final bool isLowLight;
+
   /// Creates a [LivenessResult] containing complete classification metrics.
   const LivenessResult({
     required this.isReal,
@@ -119,13 +125,20 @@ class LivenessResult {
     this.laplacianDelta,
     this.saturationVariance,
     this.moireHighFreqRatio,
+    this.meanLuminance,
+    this.isLowLight = false,
   }) : rawRealScore = rawRealScore ?? realScore,
        rawSpoofScore = rawSpoofScore ?? spoofScore,
        rawLogitDiff = rawLogitDiff ?? logitDiff,
        rawIsReal = rawIsReal ?? isReal;
 
   /// Factory constructor for pending/unstable frames.
-  factory LivenessResult.pending({double threshold = 0.0, LivenessStatus status = LivenessStatus.spoof}) {
+  factory LivenessResult.pending({
+    double threshold = 0.0,
+    LivenessStatus status = LivenessStatus.spoof,
+    double? meanLuminance,
+    bool isLowLight = false,
+  }) {
     return LivenessResult(
       isReal: false,
       status: status,
@@ -137,6 +150,8 @@ class LivenessResult {
       confidence: 0.0,
       threshold: threshold,
       inferenceTime: Duration.zero,
+      meanLuminance: meanLuminance,
+      isLowLight: isLowLight,
     );
   }
 
@@ -153,6 +168,8 @@ class LivenessResult {
     double? laplacianDelta,
     double? saturationVariance,
     double? moireHighFreqRatio,
+    double? meanLuminance,
+    bool isLowLight = false,
     LivenessStatus? overrideStatus,
   }) {
     final logitDiff = realLogit - spoofLogit;
@@ -188,6 +205,8 @@ class LivenessResult {
       laplacianDelta: laplacianDelta,
       saturationVariance: saturationVariance,
       moireHighFreqRatio: moireHighFreqRatio,
+      meanLuminance: meanLuminance,
+      isLowLight: isLowLight,
     );
   }
 
@@ -203,6 +222,8 @@ class LivenessResult {
     'confidence': confidence,
     'threshold': threshold,
     'inferenceTimeMs': inferenceTime.inMilliseconds,
+    'isLowLight': isLowLight,
+    if (meanLuminance != null) 'meanLuminance': meanLuminance,
     if (lbpUniformityScore != null) 'lbpUniformityScore': lbpUniformityScore,
     if (hogGridDominance != null) 'hogGridDominance': hogGridDominance,
     if (faceAreaRatio != null) 'faceAreaRatio': faceAreaRatio,
@@ -214,7 +235,7 @@ class LivenessResult {
 
   @override
   String toString() {
-    return 'LivenessResult(isReal: $isReal, status: ${status.name}, realScore: ${realScore.toStringAsFixed(4)}, logitDiff: ${logitDiff.toStringAsFixed(4)}, inferenceTimeMs: ${inferenceTime.inMilliseconds})';
+    return 'LivenessResult(isReal: $isReal, status: ${status.name}, realScore: ${realScore.toStringAsFixed(4)}, logitDiff: ${logitDiff.toStringAsFixed(4)}, luminance: ${meanLuminance?.toStringAsFixed(1) ?? "N/A"}, isLowLight: $isLowLight, inferenceTimeMs: ${inferenceTime.inMilliseconds})';
   }
 }
 

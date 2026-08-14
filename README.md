@@ -269,11 +269,25 @@ void dispose() {
 | `AdaptiveScreenFlashOverlay` | Flutter UI overlay widget rendering full-screen flash bursts during camera stream capture. |
 | `LivenessImageBuffer` | Lightweight container for camera raw byte planes (`NV21`, `YUV420`, `BGRA8888`). |
 | `FaceBoundingBox` | Coordinates (`x`, `y`, `width`, `height`) defining the face area. **Optional**. |
-| `LivenessResult` | Detailed result containing `isReal`, `status`, `realScore`, `lbpUniformityScore`, `hogGridDominance`, `chrominanceVariance`, and `inferenceTime`. |
+| `LivenessResult` | Detailed result containing `isReal`, `status`, `realScore`, `meanLuminance`, `isLowLight`, `lbpUniformityScore`, `hogGridDominance`, `chrominanceVariance`, and `inferenceTime`. |
 
 ---
 
-### 🛡️ Upgraded Multi-Modal Anti-Spoofing & Decision Fusion (v0.0.7)
+### 🌙 Low-Light Face Liveness Auto-Acceptance (v0.1.0)
+- **`lowLightThreshold`**: When specified (e.g. `70.0` or `0.30` or `PassiveLivenessDetector.defaultLowLightThreshold`), faces captured under dark/dimly-lit conditions (`meanLuminance < lowLightThreshold`) are automatically accepted as live (`isReal: true`, `status: LivenessStatus.real`), eliminating false spoof rejections on night shifts or in low-light workspaces. Supports both 0..255 direct scale and normalized 0..1 scale.
+```dart
+final result = await detector.detectLivenessFromCameraImage(
+  cameraImage,
+  lowLightThreshold: 70.0, // When passed, auto-accepts frames with luminance < 70.0
+);
+
+print('Mean luminance: ${result.meanLuminance}');
+print('Low light detected: ${result.isLowLight}');
+```
+
+---
+
+### 🛡️ Upgraded Multi-Modal Anti-Spoofing & Decision Fusion (v0.1.0)
 > *Note: Passive anti-spoofing is a continuous cat-and-mouse game. While no single passive heuristic is 100% infallible against every possible high-end display in every extreme lighting condition, spoofing is significantly harder now!*
 
 - **2D Laplacian Depth-of-Field Flatness Check**: Evaluates Laplacian variance delta between center face crop ($\sigma^2_{\text{Face}}$) vs outer background ($\sigma^2_{\text{Background}}$) to flag flat 2D focal planes ($\Delta < 0.08$).
