@@ -1,3 +1,7 @@
+## 0.1.1
+
+- **Expanded Flutter & Dart Compatibility**: Widened environment constraints to support Dart SDK `sdk: ">=3.0.0 <4.0.0"` and Flutter `flutter: ">=3.10.0"`.
+
 ## 0.1.0
 
 - **Low-Light Face Liveness Auto-Acceptance (`lowLightThreshold`)**: Added configurable low-light auto-acceptance to eliminate false spoof rejections and errors in dark/dimly-lit environments (such as night shifts or low-light work spaces).
@@ -27,6 +31,7 @@
 - **Enhanced `.gitignore`**: Added full coverage for Android and iOS build output directories (`.gradle/`, `Pods/`, `DerivedData/`, etc.).
 
 ## 0.0.4
+
 - **High-Resolution Screen Replay Anti-Spoofing (`HighResScreenAnalyzer`)**: Added 2D Laplacian frequency variance and patch focus depth dispersal ($\sigma^2_{\text{PatchLap}}$) analysis to catch high-resolution OLED/Retina/4K screen replay presentation attacks.
 - **Glasses Glare & Frame Edge False Positive Resolution**: Added specular glare highlight masking ($\ge 245$ brightness) and multi-region upper-face HOG peak de-biasing (`LbpHogAnalyzer` & `ColorSpaceAnalyzer`) to prevent linear glasses frames and anti-reflective lens glare from triggering false spoof classifications on genuine users.
 - **Multi-Factor Liveness Decision Fusion Engine**: Upgraded `PassiveLivenessDetector` decision engine to use multi-factor fusion scoring with adaptive neural model thresholding.
